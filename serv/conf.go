@@ -14,15 +14,17 @@ import (
 
 	_ "github.com/eventials/go-tus"
 	log "github.com/sjqzhang/seelog"
-	"github.com/thinxz-yuan/go-fastdfs/cont"
-	"github.com/thinxz-yuan/go-fastdfs/ent"
+	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
+	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 )
 
-var logacc log.LoggerInterface
-
-var v = flag.Bool("v", false, "display version")
-
-var ptr unsafe.Pointer
+var (
+	logacc log.LoggerInterface
+	v      = flag.Bool("v", false, "display version")
+	ptr    unsafe.Pointer
+	// 全局服务对象
+	global *Server
+)
 
 func init() {
 	flag.Parse()
@@ -63,17 +65,17 @@ func init() {
 	for _, folder := range cont.FOLDERS {
 		os.MkdirAll(folder, 0775)
 	}
-	server = NewServer()
+	global = NewServer()
 
-	peerId := fmt.Sprintf("%d", server.util.RandInt(0, 9))
-	if !server.util.FileExists(cont.CONST_CONF_FILE_NAME) {
+	peerId := fmt.Sprintf("%d", global.util.RandInt(0, 9))
+	if !global.util.FileExists(cont.CONST_CONF_FILE_NAME) {
 		var ip string
 		if ip = os.Getenv("GO_FASTDFS_IP"); ip == "" {
-			ip = server.util.GetPulicIP()
+			ip = global.util.GetPulicIP()
 		}
 		peer := "http://" + ip + ":8080"
 		cfg := fmt.Sprintf(cont.CfgJson, peerId, peer, peer)
-		server.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfg)
+		global.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfg)
 	}
 	if logger, err := log.LoggerFromConfigAsBytes([]byte(cont.LogConfigStr)); err != nil {
 		panic(err)
@@ -98,7 +100,7 @@ func init() {
 	} else {
 		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(cont.STORE_DIR)))
 	}
-	server.initComponent(false)
+	global.initComponent(false)
 }
 
 func Config() *ent.GloablConfig {

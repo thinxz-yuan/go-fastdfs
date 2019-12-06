@@ -7,7 +7,7 @@ import (
 	_ "github.com/eventials/go-tus"
 	log "github.com/sjqzhang/seelog"
 	"github.com/sjqzhang/tusd"
-	"github.com/thinxz-yuan/go-fastdfs/ent"
+	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime/debug"
@@ -67,7 +67,7 @@ func (HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			time.Now().Format("2006/01/02 - 15:04:05"),
 			//res.Header(),
 			time.Since(t).String(),
-			server.util.GetClientIp(req),
+			global.util.GetClientIp(req),
 			req.Method,
 			status_code,
 			req.RequestURI,
@@ -85,7 +85,7 @@ func (HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		}
 	}()
 	if Config().EnableCrossOrigin {
-		server.CrossOrigin(res, req)
+		global.CrossOrigin(res, req)
 	}
 	http.DefaultServeMux.ServeHTTP(res, req)
 }
