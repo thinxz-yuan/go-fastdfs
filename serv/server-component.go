@@ -20,6 +20,7 @@ import (
 	slog "log"
 	"net/http"
 	_ "net/http/pprof"
+	"net/smtp"
 	"os"
 	"path"
 	"path/filepath"
@@ -28,6 +29,48 @@ import (
 	"strings"
 	"time"
 )
+
+func (server *Server) CheckFileAndSendToPeer(date string, filename string, isForceUpload bool) {
+	var (
+		md5set mapset.Set
+		err    error
+		md5s   []interface{}
+	)
+	defer func() {
+		if re := recover(); re != nil {
+			buffer := debug.Stack()
+			log.Error("CheckFileAndSendToPeer")
+			log.Error(re)
+			log.Error(string(buffer))
+		}
+	}()
+	if md5set, err = server.GetMd5sByDate(date, filename); err != nil {
+		log.Error(err)
+		return
+	}
+	md5s = md5set.ToSlice()
+	for _, md := range md5s {
+		if md == nil {
+			continue
+		}
+		if fileInfo, _ := server.GetFileInfoFromLevelDB(md.(string)); fileInfo != nil && fileInfo.Md5 != "" {
+			if isForceUpload {
+				fileInfo.Peers = []string{}
+			}
+			if len(fileInfo.Peers) > len(Config().Peers) {
+				continue
+			}
+			if !server.util.Contains(server.host, fileInfo.Peers) {
+				fileInfo.Peers = append(fileInfo.Peers, server.host) // peer is null
+			}
+			if filename == cont.CONST_Md5_QUEUE_FILE_NAME {
+				server.AppendToDownloadQueue(fileInfo)
+			} else {
+				server.AppendToQueue(fileInfo)
+			}
+		}
+	}
+}
 
 func (server *Server) FormatStatInfo() {
 	var (
@@ -344,6 +387,53 @@ func (server *Server) CheckClusterStatus() {
 		}
 	}()
 }
+func (server *Server) SendToMail(to, subject, body, mailtype string) error {
+	host := Config().Mail.Host
+	user := Config().Mail.User
+	password := Config().Mail.Password
+	hp := strings.Split(host, ":")
+	auth := smtp.PlainAuth("", user, password, hp[0])
+	var contentType string
+	if mailtype == "html" {
+		contentType = "Content-Type: text/" + mailtype + "; charset=UTF-8"
+	} else {
+		contentType = "Content-Type: text/plain" + "; charset=UTF-8"
+	}
+	msg := []byte("To: " + to + "\r\nFrom: " + user + ">\r\nSubject: " + "\r\n" + contentType + "\r\n\r\n" + body)
+	sendTo := strings.Split(to, ";")
+	err := smtp.SendMail(host, auth, user, sendTo, msg)
+	return err
+}
+func (server *Server) CleanLogLevelDBByDate(date string, filename string) {
+	defer func() {
+		if re := recover(); re != nil {
+			buffer := debug.Stack()
+			log.Error("CleanLogLevelDBByDate")
+			log.Error(re)
+			log.Error(string(buffer))
+		}
+	}()
+	var (
+		err       error
+		keyPrefix string
+		keys      mapset.Set
+	)
+	keys = mapset.NewSet()
+	keyPrefix = "%s_%s_"
+	keyPrefix = fmt.Sprintf(keyPrefix, date, filename)
+	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	for iter.Next() {
+		keys.Add(string(iter.Value()))
+	}
+	iter.Release()
+	for key := range keys.Iter() {
+		err = server.RemoveKeyFromLevelDB(key.(string), server.logDB)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+}
+
 func (server *Server) LoadQueueSendToPeer() {
 	if queue, err := server.LoadFileInfoByDate(server.util.GetToDay(), cont.CONST_Md5_QUEUE_FILE_NAME); err != nil {
 		log.Error(err)
@@ -354,6 +444,35 @@ func (server *Server) LoadQueueSendToPeer() {
 		}
 	}
 }
+func (server *Server) LoadFileInfoByDate(date string, filename string) (mapset.Set, error) {
+	defer func() {
+		if re := recover(); re != nil {
+			buffer := debug.Stack()
+			log.Error("LoadFileInfoByDate")
+			log.Error(re)
+			log.Error(string(buffer))
+		}
+	}()
+	var (
+		err       error
+		keyPrefix string
+		fileInfos mapset.Set
+	)
+	fileInfos = mapset.NewSet()
+	keyPrefix = "%s_%s_"
+	keyPrefix = fmt.Sprintf(keyPrefix, date, filename)
+	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	for iter.Next() {
+		var fileInfo ent.FileInfo
+		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
+			continue
+		}
+		fileInfos.Add(&fileInfo)
+	}
+	iter.Release()
+	return fileInfos, nil
+}
+
 func (server *Server) ConsumerPostToPeer() {
 	ConsumerFunc := func() {
 		for {

@@ -1,26 +1,34 @@
 package serv
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"github.com/astaxie/beego/httplib"
 	mapset "github.com/deckarep/golang-set"
 	_ "github.com/eventials/go-tus"
+	"github.com/nfnt/resize"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/sjqzhang/googleAuthenticator"
 	log "github.com/sjqzhang/seelog"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"io/ioutil"
 	random "math/rand"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -381,43 +389,6 @@ func (server *Server) Stat(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(server.util.JsonEncodePretty(result)))
 	}
 }
-
-func (server *Server) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
-	var (
-		result ent.JsonResult
-		date   string
-		inner  string
-	)
-	if !server.IsPeer(r) {
-		result.Message = server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
-		return
-	}
-	date = r.FormValue("date")
-	inner = r.FormValue("inner")
-	if ok, err := regexp.MatchString("\\d{8}", date); err != nil || !ok {
-		result.Message = "invalid date"
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
-		return
-	}
-	if date == "" || len(date) != 8 {
-		date = server.util.GetToDay()
-	}
-	if inner != "1" {
-		for _, peer := range Config().Peers {
-			req := httplib.Post(peer + server.getRequestURI("repair_stat"))
-			req.Param("inner", "1")
-			req.Param("date", date)
-			if _, err := req.String(); err != nil {
-				log.Error(err)
-			}
-		}
-	}
-	result.Data = server.RepairStatByDate(date)
-	result.Status = "ok"
-	w.Write([]byte(server.util.JsonEncodePretty(result)))
-}
-
 func (server *Server) Status(w http.ResponseWriter, r *http.Request) {
 	var (
 		status   ent.JsonResult
@@ -488,6 +459,91 @@ func (server *Server) Status(w http.ResponseWriter, r *http.Request) {
 	status.Status = "ok"
 	status.Data = sts
 	w.Write([]byte(server.util.JsonEncodePretty(status)))
+}
+func (server *Server) GetStat() []ent.StatDateFileInfo {
+	var (
+		min   int64
+		max   int64
+		err   error
+		i     int64
+		rows  []ent.StatDateFileInfo
+		total ent.StatDateFileInfo
+	)
+	min = 20190101
+	max = 20190101
+	for k := range server.statMap.Get() {
+		ks := strings.Split(k, "_")
+		if len(ks) == 2 {
+			if i, err = strconv.ParseInt(ks[0], 10, 64); err != nil {
+				continue
+			}
+			if i >= max {
+				max = i
+			}
+			if i < min {
+				min = i
+			}
+		}
+	}
+	for i := min; i <= max; i++ {
+		s := fmt.Sprintf("%d", i)
+		if v, ok := server.statMap.GetValue(s + "_" + cont.CONST_STAT_FILE_TOTAL_SIZE_KEY); ok {
+			var info ent.StatDateFileInfo
+			info.Date = s
+			switch v.(type) {
+			case int64:
+				info.TotalSize = v.(int64)
+				total.TotalSize = total.TotalSize + v.(int64)
+			}
+			if v, ok := server.statMap.GetValue(s + "_" + cont.CONST_STAT_FILE_COUNT_KEY); ok {
+				switch v.(type) {
+				case int64:
+					info.FileCount = v.(int64)
+					total.FileCount = total.FileCount + v.(int64)
+				}
+			}
+			rows = append(rows, info)
+		}
+	}
+	total.Date = "all"
+	rows = append(rows, total)
+	return rows
+}
+
+func (server *Server) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
+	var (
+		result ent.JsonResult
+		date   string
+		inner  string
+	)
+	if !server.IsPeer(r) {
+		result.Message = server.GetClusterNotPermitMessage(r)
+		w.Write([]byte(server.util.JsonEncodePretty(result)))
+		return
+	}
+	date = r.FormValue("date")
+	inner = r.FormValue("inner")
+	if ok, err := regexp.MatchString("\\d{8}", date); err != nil || !ok {
+		result.Message = "invalid date"
+		w.Write([]byte(server.util.JsonEncodePretty(result)))
+		return
+	}
+	if date == "" || len(date) != 8 {
+		date = server.util.GetToDay()
+	}
+	if inner != "1" {
+		for _, peer := range Config().Peers {
+			req := httplib.Post(peer + server.getRequestURI("repair_stat"))
+			req.Param("inner", "1")
+			req.Param("date", date)
+			if _, err := req.String(); err != nil {
+				log.Error(err)
+			}
+		}
+	}
+	result.Data = server.RepairStatByDate(date)
+	result.Status = "ok"
+	w.Write([]byte(server.util.JsonEncodePretty(result)))
 }
 
 func (server *Server) Repair(w http.ResponseWriter, r *http.Request) {
@@ -895,4 +951,439 @@ func (server *Server) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+}
+func (server *Server) DownloadNotFound(w http.ResponseWriter, r *http.Request) {
+	var (
+		err        error
+		fullpath   string
+		smallPath  string
+		isDownload bool
+		pathMd5    string
+		peer       string
+		fileInfo   *ent.FileInfo
+	)
+	fullpath, smallPath = server.GetFilePathFromRequest(w, r)
+	isDownload = true
+	if r.FormValue("download") == "" {
+		isDownload = Config().DefaultDownload
+	}
+	if r.FormValue("download") == "0" {
+		isDownload = false
+	}
+	if smallPath != "" {
+		pathMd5 = server.util.MD5(smallPath)
+	} else {
+		pathMd5 = server.util.MD5(fullpath)
+	}
+	for _, peer = range Config().Peers {
+		if fileInfo, err = server.checkPeerFileExist(peer, pathMd5, fullpath); err != nil {
+			log.Error(err)
+			continue
+		}
+		if fileInfo.Md5 != "" {
+			go server.DownloadFromPeer(peer, fileInfo)
+			//http.Redirect(w, r, peer+r.RequestURI, 302)
+			if isDownload {
+				server.SetDownloadHeader(w, r)
+			}
+			server.DownloadFileToResponse(peer+r.RequestURI, w, r)
+			return
+		}
+	}
+	w.WriteHeader(404)
+	return
+}
+func (server *Server) DownloadFileToResponse(url string, w http.ResponseWriter, r *http.Request) {
+	var (
+		err  error
+		req  *httplib.BeegoHTTPRequest
+		resp *http.Response
+	)
+	req = httplib.Get(url)
+	req.SetTimeout(time.Second*20, time.Second*600)
+	resp, err = req.DoRequest()
+	if err != nil {
+		log.Error(err)
+	}
+	defer resp.Body.Close()
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		log.Error(err)
+	}
+}
+func (server *Server) DownloadNormalFileByURI(w http.ResponseWriter, r *http.Request) (bool, error) {
+	var (
+		err        error
+		isDownload bool
+		imgWidth   int
+		imgHeight  int
+		width      string
+		height     string
+	)
+	r.ParseForm()
+	isDownload = true
+	if r.FormValue("download") == "" {
+		isDownload = Config().DefaultDownload
+	}
+	if r.FormValue("download") == "0" {
+		isDownload = false
+	}
+	width = r.FormValue("width")
+	height = r.FormValue("height")
+	if width != "" {
+		imgWidth, err = strconv.Atoi(width)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	if height != "" {
+		imgHeight, err = strconv.Atoi(height)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	if isDownload {
+		server.SetDownloadHeader(w, r)
+	}
+	fullpath, _ := server.GetFilePathFromRequest(w, r)
+	if imgWidth != 0 || imgHeight != 0 {
+		server.ResizeImage(w, fullpath, uint(imgWidth), uint(imgHeight))
+		return true, nil
+	}
+	staticHandler.ServeHTTP(w, r)
+	return true, nil
+}
+func (server *Server) ResizeImage(w http.ResponseWriter, fullpath string, width, height uint) {
+	var (
+		img     image.Image
+		err     error
+		imgType string
+		file    *os.File
+	)
+	file, err = os.Open(fullpath)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	img, imgType, err = image.Decode(file)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	file.Close()
+	img = resize.Resize(width, height, img, resize.Lanczos3)
+	if imgType == "jpg" || imgType == "jpeg" {
+		jpeg.Encode(w, img, nil)
+	} else if imgType == "png" {
+		png.Encode(w, img)
+	} else {
+		file.Seek(0, 0)
+		io.Copy(w, file)
+	}
+}
+func (server *Server) DownloadSmallFileByURI(w http.ResponseWriter, r *http.Request) (bool, error) {
+	var (
+		err        error
+		data       []byte
+		isDownload bool
+		imgWidth   int
+		imgHeight  int
+		width      string
+		height     string
+		notFound   bool
+	)
+	r.ParseForm()
+	isDownload = true
+	if r.FormValue("download") == "" {
+		isDownload = Config().DefaultDownload
+	}
+	if r.FormValue("download") == "0" {
+		isDownload = false
+	}
+	width = r.FormValue("width")
+	height = r.FormValue("height")
+	if width != "" {
+		imgWidth, err = strconv.Atoi(width)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	if height != "" {
+		imgHeight, err = strconv.Atoi(height)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	data, notFound, err = server.GetSmallFileByURI(w, r)
+	_ = notFound
+	if data != nil && string(data[0]) == "1" {
+		if isDownload {
+			server.SetDownloadHeader(w, r)
+		}
+		if imgWidth != 0 || imgHeight != 0 {
+			server.ResizeImageByBytes(w, data[1:], uint(imgWidth), uint(imgHeight))
+			return true, nil
+		}
+		w.Write(data[1:])
+		return true, nil
+	}
+	return false, errors.New("not found")
+}
+func (server *Server) ResizeImageByBytes(w http.ResponseWriter, data []byte, width, height uint) {
+	var (
+		img     image.Image
+		err     error
+		imgType string
+	)
+	reader := bytes.NewReader(data)
+	img, imgType, err = image.Decode(reader)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	img = resize.Resize(width, height, img, resize.Lanczos3)
+	if imgType == "jpg" || imgType == "jpeg" {
+		jpeg.Encode(w, img, nil)
+	} else if imgType == "png" {
+		png.Encode(w, img)
+	} else {
+		w.Write(data)
+	}
+}
+func (server *Server) GetSmallFileByURI(w http.ResponseWriter, r *http.Request) ([]byte, bool, error) {
+	var (
+		err      error
+		data     []byte
+		offset   int64
+		length   int
+		fullpath string
+		info     os.FileInfo
+	)
+	fullpath, _ = server.GetFilePathFromRequest(w, r)
+	if _, offset, length, err = server.ParseSmallFile(r.RequestURI); err != nil {
+		return nil, false, err
+	}
+	if info, err = os.Stat(fullpath); err != nil {
+		return nil, false, err
+	}
+	if info.Size() < offset+int64(length) {
+		return nil, true, errors.New("noFound")
+	} else {
+		data, err = server.util.ReadFileByOffSet(fullpath, offset, length)
+		if err != nil {
+			return nil, false, err
+		}
+		return data, false, err
+	}
+}
+func (server *Server) ParseSmallFile(filename string) (string, int64, int, error) {
+	var (
+		err    error
+		offset int64
+		length int
+	)
+	err = errors.New("unvalid small file")
+	if len(filename) < 3 {
+		return filename, -1, -1, err
+	}
+	if strings.Contains(filename, "/") {
+		filename = filename[strings.LastIndex(filename, "/")+1:]
+	}
+	pos := strings.Split(filename, ",")
+	if len(pos) < 3 {
+		return filename, -1, -1, err
+	}
+	offset, err = strconv.ParseInt(pos[1], 10, 64)
+	if err != nil {
+		return filename, -1, -1, err
+	}
+	if length, err = strconv.Atoi(pos[2]); err != nil {
+		return filename, offset, -1, err
+	}
+	if length > cont.CONST_SMALL_FILE_SIZE || offset < 0 {
+		err = errors.New("invalid filesize or offset")
+		return filename, -1, -1, err
+	}
+	return pos[0], offset, length, nil
+}
+func (server *Server) CheckDownloadAuth(w http.ResponseWriter, r *http.Request) (bool, error) {
+	var (
+		err          error
+		maxTimestamp int64
+		minTimestamp int64
+		ts           int64
+		token        string
+		timestamp    string
+		fullpath     string
+		smallPath    string
+		pathMd5      string
+		fileInfo     *ent.FileInfo
+		scene        string
+		secret       interface{}
+		code         string
+		ok           bool
+	)
+	CheckToken := func(token string, md5sum string, timestamp string) bool {
+		if server.util.MD5(md5sum+timestamp) != token {
+			return false
+		}
+		return true
+	}
+	if Config().EnableDownloadAuth && Config().AuthUrl != "" && !server.IsPeer(r) && !server.CheckAuth(w, r) {
+		return false, errors.New("auth fail")
+	}
+	if Config().DownloadUseToken && !server.IsPeer(r) {
+		token = r.FormValue("token")
+		timestamp = r.FormValue("timestamp")
+		if token == "" || timestamp == "" {
+			return false, errors.New("unvalid request")
+		}
+		maxTimestamp = time.Now().Add(time.Second *
+			time.Duration(Config().DownloadTokenExpire)).Unix()
+		minTimestamp = time.Now().Add(-time.Second *
+			time.Duration(Config().DownloadTokenExpire)).Unix()
+		if ts, err = strconv.ParseInt(timestamp, 10, 64); err != nil {
+			return false, errors.New("unvalid timestamp")
+		}
+		if ts > maxTimestamp || ts < minTimestamp {
+			return false, errors.New("timestamp expire")
+		}
+		fullpath, smallPath = server.GetFilePathFromRequest(w, r)
+		if smallPath != "" {
+			pathMd5 = server.util.MD5(smallPath)
+		} else {
+			pathMd5 = server.util.MD5(fullpath)
+		}
+		if fileInfo, err = server.GetFileInfoFromLevelDB(pathMd5); err != nil {
+			// TODO
+		} else {
+			ok := CheckToken(token, fileInfo.Md5, timestamp)
+			if !ok {
+				return ok, errors.New("unvalid token")
+			}
+			return ok, nil
+		}
+	}
+	if Config().EnableGoogleAuth && !server.IsPeer(r) {
+		fullpath = r.RequestURI[len(Config().Group)+2 : len(r.RequestURI)]
+		fullpath = strings.Split(fullpath, "?")[0] // just path
+		scene = strings.Split(fullpath, "/")[0]
+		code = r.FormValue("code")
+		if secret, ok = server.sceneMap.GetValue(scene); ok {
+			if !server.VerifyGoogleCode(secret.(string), code, int64(Config().DownloadTokenExpire/30)) {
+				return false, errors.New("invalid google code")
+			}
+		}
+	}
+	return true, nil
+}
+func (server *Server) GetFilePathFromRequest(w http.ResponseWriter, r *http.Request) (string, string) {
+	var (
+		err       error
+		fullpath  string
+		smallPath string
+		prefix    string
+	)
+	fullpath = r.RequestURI[1:]
+	if strings.HasPrefix(r.RequestURI, "/"+Config().Group+"/") {
+		fullpath = r.RequestURI[len(Config().Group)+2 : len(r.RequestURI)]
+	}
+	fullpath = strings.Split(fullpath, "?")[0] // just path
+	fullpath = cont.DOCKER_DIR + cont.STORE_DIR_NAME + "/" + fullpath
+	prefix = "/" + cont.LARGE_DIR_NAME + "/"
+	if Config().SupportGroupManage {
+		prefix = "/" + Config().Group + "/" + cont.LARGE_DIR_NAME + "/"
+	}
+	if strings.HasPrefix(r.RequestURI, prefix) {
+		smallPath = fullpath //notice order
+		fullpath = strings.Split(fullpath, ",")[0]
+	}
+	if fullpath, err = url.PathUnescape(fullpath); err != nil {
+		log.Error(err)
+	}
+	return fullpath, smallPath
+}
+func (server *Server) SetDownloadHeader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment")
+}
+
+func (server *Server) Index(w http.ResponseWriter, r *http.Request) {
+	var (
+		uploadUrl    string
+		uploadBigUrl string
+		uppy         string
+	)
+	uploadUrl = "/upload"
+	uploadBigUrl = cont.CONST_BIG_UPLOAD_PATH_SUFFIX
+	if Config().EnableWebUpload {
+		if Config().SupportGroupManage {
+			uploadUrl = fmt.Sprintf("/%s/upload", Config().Group)
+			uploadBigUrl = fmt.Sprintf("/%s%s", Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
+		}
+		uppy = `<html>
+			  
+			  <head>
+				<meta charset="utf-8" />
+				<title>go-fastdfs</title>
+				<style>form { bargin } .form-line { display:block;height: 30px;margin:8px; } #stdUpload {background: #fafafa;border-radius: 10px;width: 745px; }</style>
+				<link href="https://transloadit.edgly.net/releases/uppy/v0.30.0/dist/uppy.min.css" rel="stylesheet"></head>
+			  
+			  <body>
+                <div>标准上传(强列建议使用这种方式)</div>
+				<div id="stdUpload">
+				  
+				  <form action="%s" method="post" enctype="multipart/form-data">
+					<span class="form-line">文件(file):
+					  <input type="file" id="file" name="file" /></span>
+					<span class="form-line">场景(scene):
+					  <input type="text" id="scene" name="scene" value="%s" /></span>
+					<span class="form-line">文件名(filename):
+					  <input type="text" id="filename" name="filename" value="" /></span>
+					<span class="form-line">输出(output):
+					  <input type="text" id="output" name="output" value="json" /></span>
+					<span class="form-line">自定义路径(path):
+					  <input type="text" id="path" name="path" value="" /></span>
+	              <span class="form-line">google认证码(code):
+					  <input type="text" id="code" name="code" value="" /></span>
+					 <span class="form-line">自定义认证(auth_token):
+					  <input type="text" id="auth_token" name="auth_token" value="" /></span>
+					<input type="submit" name="submit" value="upload" />
+                </form>
+				</div>
+                 <div>断点续传（如果文件很大时可以考虑）</div>
+				<div>
+				 
+				  <div id="drag-drop-area"></div>
+				  <script src="https://transloadit.edgly.net/releases/uppy/v0.30.0/dist/uppy.min.js"></script>
+				  <script>var uppy = Uppy.Core().use(Uppy.Dashboard, {
+					  inline: true,
+					  target: '#drag-drop-area'
+					}).use(Uppy.Tus, {
+					  endpoint: '%s'
+					})
+					uppy.on('complete', (result) => {
+					 // console.log(result) console.log('Upload complete! We’ve uploaded these files:', result.successful)
+					})
+					//uppy.setMeta({ auth_token: '9ee60e59-cb0f-4578-aaba-29b9fc2919ca',callback_url:'http://127.0.0.1/callback' ,filename:'自定义文件名','path':'自定义path',scene:'自定义场景' })//这里是传递上传的认证参数,callback_url参数中 id为文件的ID,info 文转的基本信息json
+					uppy.setMeta({ auth_token: '9ee60e59-cb0f-4578-aaba-29b9fc2919ca',callback_url:'http://127.0.0.1/callback'})//自定义参数与普通上传类似（虽然支持自定义，建议不要自定义，海量文件情况下，自定义很可能给自已给埋坑）
+                </script>
+				</div>
+			  </body>
+			</html>`
+		uppyFileName := cont.STATIC_DIR + "/uppy.html"
+		if server.util.IsExist(uppyFileName) {
+			if data, err := server.util.ReadBinFile(uppyFileName); err != nil {
+				log.Error(err)
+			} else {
+				uppy = string(data)
+			}
+		} else {
+			server.util.WriteFile(uppyFileName, uppy)
+		}
+		fmt.Fprintf(w,
+			fmt.Sprintf(uppy, uploadUrl, Config().DefaultScene, uploadBigUrl))
+	} else {
+		w.Write([]byte("web upload deny"))
+	}
 }
