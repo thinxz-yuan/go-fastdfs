@@ -56,57 +56,8 @@ var staticHandler http.Handler
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 var server *Server
 var logacc log.LoggerInterface
-var FOLDERS = []string{DATA_DIR, STORE_DIR, CONF_DIR, STATIC_DIR}
-var CONST_QUEUE_SIZE = 10000
-var (
-	VERSION     string
-	BUILD_TIME  string
-	GO_VERSION  string
-	GIT_VERSION string
-	v           = flag.Bool("v", false, "display version")
-)
-var (
-	FileName                    string
-	ptr                         unsafe.Pointer
-	DOCKER_DIR                  = ""
-	STORE_DIR                   = cont.STORE_DIR_NAME
-	CONF_DIR                    = cont.CONF_DIR_NAME
-	LOG_DIR                     = cont.LOG_DIR_NAME
-	DATA_DIR                    = cont.DATA_DIR_NAME
-	STATIC_DIR                  = cont.STATIC_DIR_NAME
-	LARGE_DIR_NAME              = "haystack"
-	LARGE_DIR                   = STORE_DIR + "/haystack"
-	CONST_LEVELDB_FILE_NAME     = DATA_DIR + "/fileserver.db"
-	CONST_LOG_LEVELDB_FILE_NAME = DATA_DIR + "/log.db"
-	CONST_STAT_FILE_NAME        = DATA_DIR + "/stat.json"
-	CONST_CONF_FILE_NAME        = CONF_DIR + "/cfg.json"
-	CONST_SEARCH_FILE_NAME      = DATA_DIR + "/search.txt"
-	CONST_UPLOAD_COUNTER_KEY    = "__CONST_UPLOAD_COUNTER_KEY__"
-	logConfigStr                = `
-<seelog type="asynctimer" asyncinterval="1000" minlevel="trace" maxlevel="error">  
-	<outputs formatid="common">  
-		<buffered formatid="common" size="1048576" flushperiod="1000">  
-			<rollingfile type="size" filename="{DOCKER_DIR}log/fileserver.log" maxsize="104857600" maxrolls="10"/>  
-		</buffered>
-	</outputs>  	  
-	 <formats>
-		 <format id="common" format="%Date %Time [%LEV] [%File:%Line] [%Func] %Msg%n" />  
-	 </formats>  
-</seelog>
-`
-	logAccessConfigStr = `
-<seelog type="asynctimer" asyncinterval="1000" minlevel="trace" maxlevel="error">  
-	<outputs formatid="common">  
-		<buffered formatid="common" size="1048576" flushperiod="1000">  
-			<rollingfile type="size" filename="{DOCKER_DIR}log/access.log" maxsize="104857600" maxrolls="10"/>  
-		</buffered>
-	</outputs>  	  
-	 <formats>
-		 <format id="common" format="%Date %Time [%LEV] [%File:%Line] [%Func] %Msg%n" />  
-	 </formats>  
-</seelog>
-`
-)
+var v = flag.Bool("v", false, "display version")
+var ptr unsafe.Pointer
 
 type Server struct {
 	ldb            *leveldb.DB
@@ -245,9 +196,9 @@ func NewServer() *Server {
 		rtMap:          goutil.NewCommonMap(0),
 		sceneMap:       goutil.NewCommonMap(0),
 		searchMap:      goutil.NewCommonMap(0),
-		queueToPeers:   make(chan FileInfo, CONST_QUEUE_SIZE),
-		queueFromPeers: make(chan FileInfo, CONST_QUEUE_SIZE),
-		queueFileLog:   make(chan *FileLog, CONST_QUEUE_SIZE),
+		queueToPeers:   make(chan FileInfo, cont.CONST_QUEUE_SIZE),
+		queueFromPeers: make(chan FileInfo, cont.CONST_QUEUE_SIZE),
+		queueFileLog:   make(chan *FileLog, cont.CONST_QUEUE_SIZE),
 		queueUpload:    make(chan WrapReqResp, 100),
 		sumMap:         goutil.NewCommonMap(365 * 3),
 	}
@@ -276,15 +227,15 @@ func NewServer() *Server {
 		CompactionTableSize: 1024 * 1024 * 20,
 		WriteBuffer:         1024 * 1024 * 20,
 	}
-	server.ldb, err = leveldb.OpenFile(CONST_LEVELDB_FILE_NAME, opts)
+	server.ldb, err = leveldb.OpenFile(cont.CONST_LEVELDB_FILE_NAME, opts)
 	if err != nil {
-		fmt.Println(fmt.Sprintf("open db file %s fail,maybe has opening", CONST_LEVELDB_FILE_NAME))
+		fmt.Println(fmt.Sprintf("open db file %s fail,maybe has opening", cont.CONST_LEVELDB_FILE_NAME))
 		log.Error(err)
 		panic(err)
 	}
-	server.logDB, err = leveldb.OpenFile(CONST_LOG_LEVELDB_FILE_NAME, opts)
+	server.logDB, err = leveldb.OpenFile(cont.CONST_LOG_LEVELDB_FILE_NAME, opts)
 	if err != nil {
-		fmt.Println(fmt.Sprintf("open db file %s fail,maybe has opening", CONST_LOG_LEVELDB_FILE_NAME))
+		fmt.Println(fmt.Sprintf("open db file %s fail,maybe has opening", cont.CONST_LOG_LEVELDB_FILE_NAME))
 		log.Error(err)
 		panic(err)
 
@@ -307,7 +258,7 @@ func ParseConfig(filePath string) {
 			panic(fmt.Sprintln("open file path:", filePath, "error:", err))
 		}
 		defer file.Close()
-		FileName = filePath
+		cont.FileName = filePath
 		data, err = ioutil.ReadAll(file)
 		if err != nil {
 			panic(fmt.Sprintln("file path:", filePath, " read all error:", err))
@@ -342,11 +293,11 @@ func (this *Server) BackUpMetaDataByDate(date string) {
 		metaFileName string
 		fi           os.FileInfo
 	)
-	logFileName = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
+	logFileName = cont.DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
 	this.lockMap.LockKey(logFileName)
 	defer this.lockMap.UnLockKey(logFileName)
-	metaFileName = DATA_DIR + "/" + date + "/" + "meta.data"
-	os.MkdirAll(DATA_DIR+"/"+date, 0775)
+	metaFileName = cont.DATA_DIR + "/" + date + "/" + "meta.data"
+	os.MkdirAll(cont.DATA_DIR+"/"+date, 0775)
 	if this.util.IsExist(logFileName) {
 		os.Remove(logFileName)
 	}
@@ -442,13 +393,13 @@ func (this *Server) RepairFileInfoFromFile() {
 					continue
 				}
 				file_path = strings.Replace(file_path, "\\", "/", -1)
-				if DOCKER_DIR != "" {
-					file_path = strings.Replace(file_path, DOCKER_DIR, "", 1)
+				if cont.DOCKER_DIR != "" {
+					file_path = strings.Replace(file_path, cont.DOCKER_DIR, "", 1)
 				}
 				if pathPrefix != "" {
 					file_path = strings.Replace(file_path, pathPrefix, cont.STORE_DIR_NAME, 1)
 				}
-				if strings.HasPrefix(file_path, cont.STORE_DIR_NAME+"/"+LARGE_DIR_NAME) {
+				if strings.HasPrefix(file_path, cont.STORE_DIR_NAME+"/"+cont.LARGE_DIR_NAME) {
 					log.Info(fmt.Sprintf("ignore small file file %s", file_path+"/"+fi.Name()))
 					continue
 				}
@@ -482,7 +433,7 @@ func (this *Server) RepairFileInfoFromFile() {
 		}
 		return nil
 	}
-	pathname := STORE_DIR
+	pathname := cont.STORE_DIR
 	pathPrefix, err = os.Readlink(pathname)
 	if err == nil {
 		//link
@@ -585,13 +536,13 @@ func (this *Server) WatchFilesChange() {
 			log.Error(err)
 		}
 		w.Ignore(dir + "/_tmp/")
-		w.Ignore(dir + "/" + LARGE_DIR_NAME + "/")
+		w.Ignore(dir + "/" + cont.LARGE_DIR_NAME + "/")
 	}
 	if err := w.AddRecursive("./" + cont.STORE_DIR_NAME); err != nil {
 		log.Error(err)
 	}
 	w.Ignore("./" + cont.STORE_DIR_NAME + "/_tmp/")
-	w.Ignore("./" + cont.STORE_DIR_NAME + "/" + LARGE_DIR_NAME + "/")
+	w.Ignore("./" + cont.STORE_DIR_NAME + "/" + cont.LARGE_DIR_NAME + "/")
 	if err := w.Start(time.Millisecond * 100); err != nil {
 		log.Error(err)
 	}
@@ -642,7 +593,7 @@ func (this *Server) GetFilePathByInfo(fileInfo *FileInfo, withDocker bool) strin
 		fn = fileInfo.ReName
 	}
 	if withDocker {
-		return DOCKER_DIR + fileInfo.Path + "/" + fn
+		return cont.DOCKER_DIR + fileInfo.Path + "/" + fn
 	}
 	return fileInfo.Path + "/" + fn
 }
@@ -747,15 +698,15 @@ func (this *Server) DownloadFromPeer(peer string, fileInfo *FileInfo) {
 		}
 	}
 	if _, err = os.Stat(fileInfo.Path); err != nil {
-		os.MkdirAll(DOCKER_DIR+fileInfo.Path, 0775)
+		os.MkdirAll(cont.DOCKER_DIR+fileInfo.Path, 0775)
 	}
 	//fmt.Println("downloadFromPeer",fileInfo)
 	p := strings.Replace(fileInfo.Path, cont.STORE_DIR_NAME+"/", "", 1)
 	//filename=this.util.UrlEncode(filename)
 	downloadUrl = peer + "/" + Config().Group + "/" + p + "/" + filename
 	log.Info("DownloadFromPeer: ", downloadUrl)
-	fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
-	fpathTmp = DOCKER_DIR + fileInfo.Path + "/" + fmt.Sprintf("%s_%s", "tmp_", filename)
+	fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + filename
+	fpathTmp = cont.DOCKER_DIR + fileInfo.Path + "/" + fmt.Sprintf("%s_%s", "tmp_", filename)
 	timeout := fileInfo.Size/1024/1024/1 + 30
 	if Config().SyncTimeout > 0 {
 		timeout = Config().SyncTimeout
@@ -916,10 +867,10 @@ func (this *Server) GetFilePathFromRequest(w http.ResponseWriter, r *http.Reques
 		fullpath = r.RequestURI[len(Config().Group)+2 : len(r.RequestURI)]
 	}
 	fullpath = strings.Split(fullpath, "?")[0] // just path
-	fullpath = DOCKER_DIR + cont.STORE_DIR_NAME + "/" + fullpath
-	prefix = "/" + LARGE_DIR_NAME + "/"
+	fullpath = cont.DOCKER_DIR + cont.STORE_DIR_NAME + "/" + fullpath
+	prefix = "/" + cont.LARGE_DIR_NAME + "/"
 	if Config().SupportGroupManage {
-		prefix = "/" + Config().Group + "/" + LARGE_DIR_NAME + "/"
+		prefix = "/" + Config().Group + "/" + cont.LARGE_DIR_NAME + "/"
 	}
 	if strings.HasPrefix(r.RequestURI, prefix) {
 		smallPath = fullpath //notice order
@@ -1354,7 +1305,7 @@ func (this *Server) postFileToPeer(fileInfo *FileInfo) {
 				filename = strings.Split(fileInfo.ReName, ",")[0]
 			}
 		}
-		fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
+		fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + filename
 		if !this.util.FileExists(fpath) {
 			log.Warn(fmt.Sprintf("file '%s' not found", fpath))
 			continue
@@ -1415,7 +1366,7 @@ func (this *Server) SaveFileMd5Log(fileInfo *FileInfo, filename string) {
 	var (
 		info FileInfo
 	)
-	for len(this.queueFileLog)+len(this.queueFileLog)/10 > CONST_QUEUE_SIZE {
+	for len(this.queueFileLog)+len(this.queueFileLog)/10 > cont.CONST_QUEUE_SIZE {
 		time.Sleep(time.Second * 1)
 	}
 	info = *fileInfo
@@ -1527,9 +1478,9 @@ func (this *Server) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 			w.Write(data)
 			return
 		}
-		fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name
+		fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name
 		if fileInfo.ReName != "" {
-			fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
+			fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
 		}
 		if this.util.IsExist(fpath) {
 			if data, err = json.Marshal(fileInfo); err == nil {
@@ -1597,9 +1548,9 @@ func (this *Server) CheckFilesExist(w http.ResponseWriter, r *http.Request) {
 				fileInfos = append(fileInfos, fileInfo)
 				continue
 			}
-			fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name
+			fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name
 			if fileInfo.ReName != "" {
-				fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
+				fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
 			}
 			if this.util.IsExist(fpath) {
 				if data, err = json.Marshal(fileInfo); err == nil {
@@ -1704,7 +1655,7 @@ func (this *Server) SaveStat() {
 					if data, err := json.Marshal(stat); err != nil {
 						log.Error(err)
 					} else {
-						this.util.WriteBinFile(CONST_STAT_FILE_NAME, data)
+						this.util.WriteBinFile(cont.CONST_STAT_FILE_NAME, data)
 					}
 				}
 			}
@@ -1838,7 +1789,7 @@ func (this *Server) GetMd5File(w http.ResponseWriter, r *http.Request) {
 	if !this.IsPeer(r) {
 		return
 	}
-	fpath = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
+	fpath = cont.DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
 	if !this.util.FileExists(fpath) {
 		w.WriteHeader(404)
 		return
@@ -1862,9 +1813,9 @@ func (this *Server) GetMd5sMapByDate(date string, filename string) (*goutil.Comm
 	)
 	result = goutil.NewCommonMap(0)
 	if filename == "" {
-		fpath = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
+		fpath = cont.DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
 	} else {
-		fpath = DATA_DIR + "/" + date + "/" + filename
+		fpath = cont.DATA_DIR + "/" + date + "/" + filename
 	}
 	if !this.util.FileExists(fpath) {
 		return result, errors.New(fmt.Sprintf("fpath %s not found", fpath))
@@ -1932,7 +1883,7 @@ func (this *Server) SyncFileInfo(w http.ResponseWriter, r *http.Request) {
 	if fileInfo.ReName != "" {
 		filename = fileInfo.ReName
 	}
-	p := strings.Replace(fileInfo.Path, STORE_DIR+"/", "", 1)
+	p := strings.Replace(fileInfo.Path, cont.STORE_DIR+"/", "", 1)
 	downloadUrl := fmt.Sprintf("http://%s/%s", r.Host, Config().Group+"/"+p+"/"+filename)
 	log.Info("SyncFileInfo: ", downloadUrl)
 	w.Write([]byte(downloadUrl))
@@ -2048,9 +1999,9 @@ func (this *Server) RemoveFile(w http.ResponseWriter, r *http.Request) {
 		name = fileInfo.ReName
 	}
 	fpath = fileInfo.Path + "/" + name
-	if fileInfo.Path != "" && this.util.FileExists(DOCKER_DIR+fpath) {
+	if fileInfo.Path != "" && this.util.FileExists(cont.DOCKER_DIR+fpath) {
 		this.SaveFileMd5Log(fileInfo, cont.CONST_REMOME_Md5_FILE_NAME)
-		if err = os.Remove(DOCKER_DIR + fpath); err != nil {
+		if err = os.Remove(cont.DOCKER_DIR + fpath); err != nil {
 			result.Message = err.Error()
 			w.Write([]byte(this.util.JsonEncodePretty(result)))
 			return
@@ -2148,15 +2099,15 @@ func (this *Server) SaveUploadFile(file multipart.File, header *multipart.FileHe
 		folder = fmt.Sprintf(folder+"/%s", Config().PeerId)
 	}
 	if fileInfo.Scene != "" {
-		folder = fmt.Sprintf(STORE_DIR+"/%s/%s", fileInfo.Scene, folder)
+		folder = fmt.Sprintf(cont.STORE_DIR+"/%s/%s", fileInfo.Scene, folder)
 	} else {
-		folder = fmt.Sprintf(STORE_DIR+"/%s", folder)
+		folder = fmt.Sprintf(cont.STORE_DIR+"/%s", folder)
 	}
 	if fileInfo.Path != "" {
-		if strings.HasPrefix(fileInfo.Path, STORE_DIR) {
+		if strings.HasPrefix(fileInfo.Path, cont.STORE_DIR) {
 			folder = fileInfo.Path
 		} else {
-			folder = STORE_DIR + "/" + fileInfo.Path
+			folder = cont.STORE_DIR + "/" + fileInfo.Path
 		}
 	}
 	if !this.util.FileExists(folder) {
@@ -2204,7 +2155,7 @@ func (this *Server) SaveUploadFile(file multipart.File, header *multipart.FileHe
 	}
 	fileInfo.Md5 = v
 	//fileInfo.Path = folder //strings.Replace( folder,DOCKER_DIR,"",1)
-	fileInfo.Path = strings.Replace(folder, DOCKER_DIR, "", 1)
+	fileInfo.Path = strings.Replace(folder, cont.DOCKER_DIR, "", 1)
 	fileInfo.Peers = append(fileInfo.Peers, this.host)
 	//fmt.Println("upload",fileInfo)
 	return fileInfo, nil
@@ -2221,7 +2172,7 @@ func (this *Server) Upload(w http.ResponseWriter, r *http.Request) {
 		this.upload(w, r)
 		return
 	}
-	folder = STORE_DIR + "/_tmp/" + time.Now().Format("20060102")
+	folder = cont.STORE_DIR + "/_tmp/" + time.Now().Format("20060102")
 	os.MkdirAll(folder, 0777)
 	fn = folder + "/" + this.util.GetUUID()
 	defer func() {
@@ -2345,9 +2296,9 @@ func (this *Server) upload(w http.ResponseWriter, r *http.Request) {
 			if v, _ := this.GetFileInfoFromLevelDB(fileInfo.Md5); v != nil && v.Md5 != "" {
 				fileResult = this.BuildFileResult(v, r)
 				if Config().RenameFile {
-					os.Remove(DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName)
+					os.Remove(cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName)
 				} else {
-					os.Remove(DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name)
+					os.Remove(cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name)
 				}
 				if output == "json" {
 					if data, err = json.Marshal(fileResult); err != nil {
@@ -2435,8 +2386,8 @@ func (this *Server) SaveSmallFile(fileInfo *FileInfo) error {
 	if fileInfo.ReName != "" {
 		filename = fileInfo.ReName
 	}
-	fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
-	largeDir = LARGE_DIR + "/" + Config().PeerId
+	fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + filename
+	largeDir = cont.LARGE_DIR + "/" + Config().PeerId
 	if !this.util.FileExists(largeDir) {
 		os.MkdirAll(largeDir, 0775)
 	}
@@ -2472,7 +2423,7 @@ func (this *Server) SaveSmallFile(fileInfo *FileInfo) error {
 		}
 		srcFile.Close()
 		os.Remove(fpath)
-		fileInfo.Path = strings.Replace(largeDir, DOCKER_DIR, "", 1)
+		fileInfo.Path = strings.Replace(largeDir, cont.DOCKER_DIR, "", 1)
 	}
 	return nil
 }
@@ -2659,13 +2610,13 @@ func (this *Server) RegisterExit() {
 }
 func (this *Server) AppendToQueue(fileInfo *FileInfo) {
 
-	for (len(this.queueToPeers) + CONST_QUEUE_SIZE/10) > CONST_QUEUE_SIZE {
+	for (len(this.queueToPeers) + cont.CONST_QUEUE_SIZE/10) > cont.CONST_QUEUE_SIZE {
 		time.Sleep(time.Millisecond * 50)
 	}
 	this.queueToPeers <- *fileInfo
 }
 func (this *Server) AppendToDownloadQueue(fileInfo *FileInfo) {
-	for (len(this.queueFromPeers) + CONST_QUEUE_SIZE/10) > CONST_QUEUE_SIZE {
+	for (len(this.queueFromPeers) + cont.CONST_QUEUE_SIZE/10) > cont.CONST_QUEUE_SIZE {
 		time.Sleep(time.Millisecond * 50)
 	}
 	this.queueFromPeers <- *fileInfo
@@ -2703,7 +2654,7 @@ func (this *Server) RemoveDownloading() {
 				keys := strings.Split(string(key), "_")
 				if len(keys) == 3 {
 					if t, err := strconv.ParseInt(keys[1], 10, 64); err == nil && time.Now().Unix()-t > 60*10 {
-						os.Remove(DOCKER_DIR + keys[2])
+						os.Remove(cont.DOCKER_DIR + keys[2])
 					}
 				}
 			}
@@ -2727,7 +2678,7 @@ func (this *Server) ConsumerLog() {
 func (this *Server) LoadSearchDict() {
 	go func() {
 		log.Info("Load search dict ....")
-		f, err := os.Open(CONST_SEARCH_FILE_NAME)
+		f, err := os.Open(cont.CONST_SEARCH_FILE_NAME)
 		if err != nil {
 			log.Error(err)
 			return
@@ -2754,10 +2705,10 @@ func (this *Server) SaveSearchDict() {
 		k          string
 		v          interface{}
 	)
-	this.lockMap.LockKey(CONST_SEARCH_FILE_NAME)
-	defer this.lockMap.UnLockKey(CONST_SEARCH_FILE_NAME)
+	this.lockMap.LockKey(cont.CONST_SEARCH_FILE_NAME)
+	defer this.lockMap.UnLockKey(cont.CONST_SEARCH_FILE_NAME)
 	searchDict = this.searchMap.Get()
-	fp, err = os.OpenFile(CONST_SEARCH_FILE_NAME, os.O_RDWR, 0755)
+	fp, err = os.OpenFile(cont.CONST_SEARCH_FILE_NAME, os.O_RDWR, 0755)
 	if err != nil {
 		log.Error(err)
 		return
@@ -2783,11 +2734,11 @@ func (this *Server) ConsumerUpload() {
 		for {
 			wr := <-this.queueUpload
 			this.upload(*wr.w, wr.r)
-			this.rtMap.AddCountInt64(CONST_UPLOAD_COUNTER_KEY, wr.r.ContentLength)
-			if v, ok := this.rtMap.GetValue(CONST_UPLOAD_COUNTER_KEY); ok {
+			this.rtMap.AddCountInt64(cont.CONST_UPLOAD_COUNTER_KEY, wr.r.ContentLength)
+			if v, ok := this.rtMap.GetValue(cont.CONST_UPLOAD_COUNTER_KEY); ok {
 				if v.(int64) > 1*1024*1024*1024 {
 					var _v int64
-					this.rtMap.Put(CONST_UPLOAD_COUNTER_KEY, _v)
+					this.rtMap.Put(cont.CONST_UPLOAD_COUNTER_KEY, _v)
 					debug.FreeOSMemory()
 				}
 			}
@@ -3088,12 +3039,12 @@ func (this *Server) Reload(w http.ResponseWriter, r *http.Request) {
 		}
 		result.Status = "ok"
 		cfgjson = this.util.JsonEncodePretty(cfg)
-		this.util.WriteFile(CONST_CONF_FILE_NAME, cfgjson)
+		this.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfgjson)
 		w.Write([]byte(this.util.JsonEncodePretty(result)))
 		return
 	}
 	if action == "reload" {
-		if data, err = ioutil.ReadFile(CONST_CONF_FILE_NAME); err != nil {
+		if data, err = ioutil.ReadFile(cont.CONST_CONF_FILE_NAME); err != nil {
 			result.Message = err.Error()
 			w.Write([]byte(this.util.JsonEncodePretty(result)))
 			return
@@ -3103,7 +3054,7 @@ func (this *Server) Reload(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(this.util.JsonEncodePretty(result)))
 			return
 		}
-		ParseConfig(CONST_CONF_FILE_NAME)
+		ParseConfig(cont.CONST_CONF_FILE_NAME)
 		this.initComponent(true)
 		result.Status = "ok"
 		w.Write([]byte(this.util.JsonEncodePretty(result)))
@@ -3119,8 +3070,8 @@ func (this *Server) RemoveEmptyDir(w http.ResponseWriter, r *http.Request) {
 	)
 	result.Status = "ok"
 	if this.IsPeer(r) {
-		go this.util.RemoveEmptyDir(DATA_DIR)
-		go this.util.RemoveEmptyDir(STORE_DIR)
+		go this.util.RemoveEmptyDir(cont.DATA_DIR)
+		go this.util.RemoveEmptyDir(cont.STORE_DIR)
 		result.Message = "clean job start ..,don't try again!!!"
 		w.Write([]byte(this.util.JsonEncodePretty(result)))
 	} else {
@@ -3249,7 +3200,7 @@ func (this *Server) ListDir(w http.ResponseWriter, r *http.Request) {
 	if tmpDir, err = os.Readlink(dir); err == nil {
 		dir = tmpDir
 	}
-	filesInfo, err = ioutil.ReadDir(DOCKER_DIR + cont.STORE_DIR_NAME + "/" + dir)
+	filesInfo, err = ioutil.ReadDir(cont.DOCKER_DIR + cont.STORE_DIR_NAME + "/" + dir)
 	if err != nil {
 		log.Error(err)
 		result.Message = err.Error()
@@ -3339,7 +3290,7 @@ func (this *Server) Report(w http.ResponseWriter, r *http.Request) {
 	result.Status = "ok"
 	r.ParseForm()
 	if this.IsPeer(r) {
-		reportFileName = STATIC_DIR + "/report.html"
+		reportFileName = cont.STATIC_DIR + "/report.html"
 		if this.util.IsExist(reportFileName) {
 			if data, err := this.util.ReadBinFile(reportFileName); err != nil {
 				log.Error(err)
@@ -3521,7 +3472,7 @@ func (this *Server) Index(w http.ResponseWriter, r *http.Request) {
 				</div>
 			  </body>
 			</html>`
-		uppyFileName := STATIC_DIR + "/uppy.html"
+		uppyFileName := cont.STATIC_DIR + "/uppy.html"
 		if this.util.IsExist(uppyFileName) {
 			if data, err := this.util.ReadBinFile(uppyFileName); err != nil {
 				log.Error(err)
@@ -3540,7 +3491,7 @@ func (this *Server) Index(w http.ResponseWriter, r *http.Request) {
 func init() {
 	flag.Parse()
 	if *v {
-		fmt.Printf("%s\n%s\n%s\n%s\n", VERSION, BUILD_TIME, GO_VERSION, GIT_VERSION)
+		fmt.Printf("%s\n%s\n%s\n%s\n", cont.VERSION, cont.BUILD_TIME, cont.GO_VERSION, cont.GIT_VERSION)
 		os.Exit(0)
 	}
 	appDir, e1 := filepath.Abs(filepath.Dir(os.Args[0]))
@@ -3552,64 +3503,64 @@ func init() {
 		fmt.Println(msg)
 		os.Exit(1)
 	}
-	DOCKER_DIR = os.Getenv("GO_FASTDFS_DIR")
-	if DOCKER_DIR != "" {
-		if !strings.HasSuffix(DOCKER_DIR, "/") {
-			DOCKER_DIR = DOCKER_DIR + "/"
+	cont.DOCKER_DIR = os.Getenv("GO_FASTDFS_DIR")
+	if cont.DOCKER_DIR != "" {
+		if !strings.HasSuffix(cont.DOCKER_DIR, "/") {
+			cont.DOCKER_DIR = cont.DOCKER_DIR + "/"
 		}
 	}
-	STORE_DIR = DOCKER_DIR + cont.STORE_DIR_NAME
-	CONF_DIR = DOCKER_DIR + cont.CONF_DIR_NAME
-	DATA_DIR = DOCKER_DIR + cont.DATA_DIR_NAME
-	LOG_DIR = DOCKER_DIR + cont.LOG_DIR_NAME
-	STATIC_DIR = DOCKER_DIR + cont.STATIC_DIR_NAME
-	LARGE_DIR_NAME = "haystack"
-	LARGE_DIR = STORE_DIR + "/haystack"
-	CONST_LEVELDB_FILE_NAME = DATA_DIR + "/fileserver.db"
-	CONST_LOG_LEVELDB_FILE_NAME = DATA_DIR + "/log.db"
-	CONST_STAT_FILE_NAME = DATA_DIR + "/stat.json"
-	CONST_CONF_FILE_NAME = CONF_DIR + "/cfg.json"
-	CONST_SEARCH_FILE_NAME = DATA_DIR + "/search.txt"
-	FOLDERS = []string{DATA_DIR, STORE_DIR, CONF_DIR, STATIC_DIR}
-	logAccessConfigStr = strings.Replace(logAccessConfigStr, "{DOCKER_DIR}", DOCKER_DIR, -1)
-	logConfigStr = strings.Replace(logConfigStr, "{DOCKER_DIR}", DOCKER_DIR, -1)
-	for _, folder := range FOLDERS {
+	cont.STORE_DIR = cont.DOCKER_DIR + cont.STORE_DIR_NAME
+	cont.CONF_DIR = cont.DOCKER_DIR + cont.CONF_DIR_NAME
+	cont.DATA_DIR = cont.DOCKER_DIR + cont.DATA_DIR_NAME
+	cont.LOG_DIR = cont.DOCKER_DIR + cont.LOG_DIR_NAME
+	cont.STATIC_DIR = cont.DOCKER_DIR + cont.STATIC_DIR_NAME
+	cont.LARGE_DIR_NAME = "haystack"
+	cont.LARGE_DIR = cont.STORE_DIR + "/haystack"
+	cont.CONST_LEVELDB_FILE_NAME = cont.DATA_DIR + "/fileserver.db"
+	cont.CONST_LOG_LEVELDB_FILE_NAME = cont.DATA_DIR + "/log.db"
+	cont.CONST_STAT_FILE_NAME = cont.DATA_DIR + "/stat.json"
+	cont.CONST_CONF_FILE_NAME = cont.CONF_DIR + "/cfg.json"
+	cont.CONST_SEARCH_FILE_NAME = cont.DATA_DIR + "/search.txt"
+	cont.FOLDERS = []string{cont.DATA_DIR, cont.STORE_DIR, cont.CONF_DIR, cont.STATIC_DIR}
+	cont.LogAccessConfigStr = strings.Replace(cont.LogAccessConfigStr, "{DOCKER_DIR}", cont.DOCKER_DIR, -1)
+	cont.LogConfigStr = strings.Replace(cont.LogConfigStr, "{DOCKER_DIR}", cont.DOCKER_DIR, -1)
+	for _, folder := range cont.FOLDERS {
 		os.MkdirAll(folder, 0775)
 	}
 	server = NewServer()
 
 	peerId := fmt.Sprintf("%d", server.util.RandInt(0, 9))
-	if !server.util.FileExists(CONST_CONF_FILE_NAME) {
+	if !server.util.FileExists(cont.CONST_CONF_FILE_NAME) {
 		var ip string
 		if ip = os.Getenv("GO_FASTDFS_IP"); ip == "" {
 			ip = server.util.GetPulicIP()
 		}
 		peer := "http://" + ip + ":8080"
 		cfg := fmt.Sprintf(cont.CfgJson, peerId, peer, peer)
-		server.util.WriteFile(CONST_CONF_FILE_NAME, cfg)
+		server.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfg)
 	}
-	if logger, err := log.LoggerFromConfigAsBytes([]byte(logConfigStr)); err != nil {
+	if logger, err := log.LoggerFromConfigAsBytes([]byte(cont.LogConfigStr)); err != nil {
 		panic(err)
 	} else {
 		log.ReplaceLogger(logger)
 	}
-	if _logacc, err := log.LoggerFromConfigAsBytes([]byte(logAccessConfigStr)); err == nil {
+	if _logacc, err := log.LoggerFromConfigAsBytes([]byte(cont.LogAccessConfigStr)); err == nil {
 		logacc = _logacc
 		log.Info("succes init log access")
 	} else {
 		log.Error(err.Error())
 	}
-	ParseConfig(CONST_CONF_FILE_NAME)
+	ParseConfig(cont.CONST_CONF_FILE_NAME)
 	if Config().QueueSize == 0 {
-		Config().QueueSize = CONST_QUEUE_SIZE
+		Config().QueueSize = cont.CONST_QUEUE_SIZE
 	}
 	if Config().PeerId == "" {
 		Config().PeerId = peerId
 	}
 	if Config().SupportGroupManage {
-		staticHandler = http.StripPrefix("/"+Config().Group+"/", http.FileServer(http.Dir(STORE_DIR)))
+		staticHandler = http.StripPrefix("/"+Config().Group+"/", http.FileServer(http.Dir(cont.STORE_DIR)))
 	} else {
-		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(STORE_DIR)))
+		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(cont.STORE_DIR)))
 	}
 	server.initComponent(false)
 }
@@ -3732,13 +3683,13 @@ func (this *Server) initTus() {
 		fileLog *os.File
 		bigDir  string
 	)
-	BIG_DIR := STORE_DIR + "/_big/" + Config().PeerId
+	BIG_DIR := cont.STORE_DIR + "/_big/" + Config().PeerId
 	os.MkdirAll(BIG_DIR, 0775)
-	os.MkdirAll(LOG_DIR, 0775)
+	os.MkdirAll(cont.LOG_DIR, 0775)
 	store := filestore.FileStore{
 		Path: BIG_DIR,
 	}
-	if fileLog, err = os.OpenFile(LOG_DIR+"/tusd.log", os.O_CREATE|os.O_RDWR, 0666); err != nil {
+	if fileLog, err = os.OpenFile(cont.LOG_DIR+"/tusd.log", os.O_CREATE|os.O_RDWR, 0666); err != nil {
 		log.Error(err)
 		panic("initTus")
 	}
@@ -3749,7 +3700,7 @@ func (this *Server) initTus() {
 			} else {
 				if fi.Size() > 1024*1024*500 {
 					//500M
-					this.util.CopyFile(LOG_DIR+"/tusd.log", LOG_DIR+"/tusd.log.2")
+					this.util.CopyFile(cont.LOG_DIR+"/tusd.log", cont.LOG_DIR+"/tusd.log.2")
 					fileLog.Seek(0, 0)
 					fileLog.Truncate(0)
 					fileLog.Seek(0, 2)
@@ -3787,7 +3738,7 @@ func (this *Server) initTus() {
 			if fi.ReName != "" {
 				fn = fi.ReName
 			}
-			fp := DOCKER_DIR + fi.Path + "/" + fn
+			fp := cont.DOCKER_DIR + fi.Path + "/" + fn
 			if this.util.FileExists(fp) {
 				log.Info(fmt.Sprintf("download:%s", fp))
 				return os.Open(fp)
@@ -3867,9 +3818,9 @@ func (this *Server) initTus() {
 				if pathCustom != "" {
 					fpath = "/" + strings.Replace(pathCustom, ".", "", -1) + "/"
 				}
-				newFullPath := STORE_DIR + "/" + scene + fpath + Config().PeerId + "/" + filename
+				newFullPath := cont.STORE_DIR + "/" + scene + fpath + Config().PeerId + "/" + filename
 				if pathCustom != "" {
-					newFullPath = STORE_DIR + "/" + scene + fpath + filename
+					newFullPath = cont.STORE_DIR + "/" + scene + fpath + filename
 				}
 				if fi, err := this.GetFileInfoFromLevelDB(md5sum); err != nil {
 					log.Error(err)
@@ -3888,7 +3839,7 @@ func (this *Server) initTus() {
 					}
 				}
 				fpath = cont.STORE_DIR_NAME + "/" + Config().DefaultScene + fpath + Config().PeerId
-				os.MkdirAll(DOCKER_DIR+fpath, 0775)
+				os.MkdirAll(cont.DOCKER_DIR+fpath, 0775)
 				fileInfo := &FileInfo{
 					Name:      name,
 					Path:      fpath,
@@ -3940,8 +3891,8 @@ func (this *Server) FormatStatInfo() {
 		count int64
 		stat  map[string]interface{}
 	)
-	if this.util.FileExists(CONST_STAT_FILE_NAME) {
-		if data, err = this.util.ReadBinFile(CONST_STAT_FILE_NAME); err != nil {
+	if this.util.FileExists(cont.CONST_STAT_FILE_NAME) {
+		if data, err = this.util.ReadBinFile(cont.CONST_STAT_FILE_NAME); err != nil {
 			log.Error(err)
 		} else {
 			if err = json.Unmarshal(data, &stat); err != nil {
