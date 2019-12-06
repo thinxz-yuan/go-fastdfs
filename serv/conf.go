@@ -1,13 +1,10 @@
 package serv
 
 import (
-	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"unsafe"
@@ -19,101 +16,69 @@ import (
 )
 
 var (
-	logacc log.LoggerInterface
-	v      = flag.Bool("v", false, "display version")
-	ptr    unsafe.Pointer
-	// 全局服务对象
-	global *Server
+	ptr unsafe.Pointer
 )
 
-func init() {
-	flag.Parse()
-	if *v {
-		fmt.Printf("%s\n%s\n%s\n%s\n", cont.VERSION, cont.BUILD_TIME, cont.GO_VERSION, cont.GIT_VERSION)
-		os.Exit(0)
-	}
-	appDir, e1 := filepath.Abs(filepath.Dir(os.Args[0]))
-	curDir, e2 := filepath.Abs(".")
-	if e1 == nil && e2 == nil && appDir != curDir {
-		msg := fmt.Sprintf("please change directory to '%s' start fileserver\n", appDir)
-		msg = msg + fmt.Sprintf("请切换到 '%s' 目录启动 fileserver ", appDir)
-		log.Warn(msg)
-		fmt.Println(msg)
-		os.Exit(1)
-	}
-	cont.DOCKER_DIR = os.Getenv("GO_FASTDFS_DIR")
-	if cont.DOCKER_DIR != "" {
-		if !strings.HasSuffix(cont.DOCKER_DIR, "/") {
-			cont.DOCKER_DIR = cont.DOCKER_DIR + "/"
-		}
-	}
-	cont.STORE_DIR = cont.DOCKER_DIR + cont.STORE_DIR_NAME
-	cont.CONF_DIR = cont.DOCKER_DIR + cont.CONF_DIR_NAME
-	cont.DATA_DIR = cont.DOCKER_DIR + cont.DATA_DIR_NAME
-	cont.LOG_DIR = cont.DOCKER_DIR + cont.LOG_DIR_NAME
-	cont.STATIC_DIR = cont.DOCKER_DIR + cont.STATIC_DIR_NAME
-	cont.LARGE_DIR_NAME = "haystack"
-	cont.LARGE_DIR = cont.STORE_DIR + "/haystack"
-	cont.CONST_LEVELDB_FILE_NAME = cont.DATA_DIR + "/fileserver.db"
-	cont.CONST_LOG_LEVELDB_FILE_NAME = cont.DATA_DIR + "/log.db"
-	cont.CONST_STAT_FILE_NAME = cont.DATA_DIR + "/stat.json"
-	cont.CONST_CONF_FILE_NAME = cont.CONF_DIR + "/cfg.json"
-	cont.CONST_SEARCH_FILE_NAME = cont.DATA_DIR + "/search.txt"
-	cont.FOLDERS = []string{cont.DATA_DIR, cont.STORE_DIR, cont.CONF_DIR, cont.STATIC_DIR}
-	cont.LogAccessConfigStr = strings.Replace(cont.LogAccessConfigStr, "{DOCKER_DIR}", cont.DOCKER_DIR, -1)
-	cont.LogConfigStr = strings.Replace(cont.LogConfigStr, "{DOCKER_DIR}", cont.DOCKER_DIR, -1)
-	for _, folder := range cont.FOLDERS {
-		os.MkdirAll(folder, 0775)
-	}
-	global = NewServer()
-
-	peerId := fmt.Sprintf("%d", global.util.RandInt(0, 9))
-	if !global.util.FileExists(cont.CONST_CONF_FILE_NAME) {
-		var ip string
-		if ip = os.Getenv("GO_FASTDFS_IP"); ip == "" {
-			ip = global.util.GetPulicIP()
-		}
-		peer := "http://" + ip + ":8080"
-		cfg := fmt.Sprintf(cont.CfgJson, peerId, peer, peer)
-		global.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfg)
-	}
-	if logger, err := log.LoggerFromConfigAsBytes([]byte(cont.LogConfigStr)); err != nil {
-		panic(err)
-	} else {
-		log.ReplaceLogger(logger)
-	}
-	if _logacc, err := log.LoggerFromConfigAsBytes([]byte(cont.LogAccessConfigStr)); err == nil {
-		logacc = _logacc
-		log.Info("succes init log access")
-	} else {
-		log.Error(err.Error())
-	}
-	ParseConfig(cont.CONST_CONF_FILE_NAME)
-	if Config().QueueSize == 0 {
-		Config().QueueSize = cont.CONST_QUEUE_SIZE
-	}
-	if Config().PeerId == "" {
-		Config().PeerId = peerId
-	}
-	if Config().SupportGroupManage {
-		staticHandler = http.StripPrefix("/"+Config().Group+"/", http.FileServer(http.Dir(cont.STORE_DIR)))
-	} else {
-		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(cont.STORE_DIR)))
-	}
-	global.initComponent(false)
+type GlobalConfig struct {
+	Addr                 string   `json:"addr"`
+	Peers                []string `json:"peers"`
+	Group                string   `json:"group"`
+	RenameFile           bool     `json:"rename_file"`
+	ShowDir              bool     `json:"show_dir"`
+	Extensions           []string `json:"extensions"`
+	RefreshInterval      int      `json:"refresh_interval"`
+	EnableWebUpload      bool     `json:"enable_web_upload"`
+	DownloadDomain       string   `json:"download_domain"`
+	EnableCustomPath     bool     `json:"enable_custom_path"`
+	Scenes               []string `json:"scenes"`
+	AlarmReceivers       []string `json:"alarm_receivers"`
+	DefaultScene         string   `json:"default_scene"`
+	Mail                 ent.Mail `json:"mail"`
+	AlarmUrl             string   `json:"alarm_url"`
+	DownloadUseToken     bool     `json:"download_use_token"`
+	DownloadTokenExpire  int      `json:"download_token_expire"`
+	QueueSize            int      `json:"queue_size"`
+	AutoRepair           bool     `json:"auto_repair"`
+	Host                 string   `json:"host"`
+	FileSumArithmetic    string   `json:"file_sum_arithmetic"`
+	PeerId               string   `json:"peer_id"`
+	SupportGroupManage   bool     `json:"support_group_manage"`
+	AdminIps             []string `json:"admin_ips"`
+	EnableMergeSmallFile bool     `json:"enable_merge_small_file"`
+	EnableMigrate        bool     `json:"enable_migrate"`
+	EnableDistinctFile   bool     `json:"enable_distinct_file"`
+	ReadOnly             bool     `json:"read_only"`
+	EnableCrossOrigin    bool     `json:"enable_cross_origin"`
+	EnableGoogleAuth     bool     `json:"enable_google_auth"`
+	AuthUrl              string   `json:"auth_url"`
+	EnableDownloadAuth   bool     `json:"enable_download_auth"`
+	DefaultDownload      bool     `json:"default_download"`
+	EnableTus            bool     `json:"enable_tus"`
+	SyncTimeout          int64    `json:"sync_timeout"`
+	EnableFsnotify       bool     `json:"enable_fsnotify"`
+	EnableDiskCache      bool     `json:"enable_disk_cache"`
+	ConnectTimeout       bool     `json:"connect_timeout"`
+	ReadTimeout          int      `json:"read_timeout"`
+	WriteTimeout         int      `json:"write_timeout"`
+	IdleTimeout          int      `json:"idle_timeout"`
+	ReadHeaderTimeout    int      `json:"read_header_timeout"`
+	SyncWorker           int      `json:"sync_worker"`
+	UploadWorker         int      `json:"upload_worker"`
+	UploadQueueSize      int      `json:"upload_queue_size"`
+	RetryCount           int      `json:"retry_count"`
 }
 
-func Config() *ent.GloablConfig {
-	return (*ent.GloablConfig)(atomic.LoadPointer(&ptr))
+func Config() *GlobalConfig {
+	return (*GlobalConfig)(atomic.LoadPointer(&ptr))
 }
 
 func ParseConfig(filePath string) {
-	var (
-		data []byte
-	)
+	var data []byte
 	if filePath == "" {
+		//
 		data = []byte(strings.TrimSpace(cont.CfgJson))
 	} else {
+		//
 		file, err := os.Open(filePath)
 		if err != nil {
 			panic(fmt.Sprintln("open file path:", filePath, "error:", err))
@@ -125,10 +90,14 @@ func ParseConfig(filePath string) {
 			panic(fmt.Sprintln("file path:", filePath, " read all error:", err))
 		}
 	}
-	var c ent.GloablConfig
+
+	//
+	var c GlobalConfig
 	if err := json.Unmarshal(data, &c); err != nil {
 		panic(fmt.Sprintln("file path:", filePath, "json unmarshal error:", err))
 	}
+
+	//
 	log.Info(c)
 	atomic.StorePointer(&ptr, unsafe.Pointer(&c))
 	log.Info("config parse success")

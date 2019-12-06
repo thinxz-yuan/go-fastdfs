@@ -8,7 +8,6 @@ import (
 	"github.com/astaxie/beego/httplib"
 	mapset "github.com/deckarep/golang-set"
 	_ "github.com/eventials/go-tus"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/nfnt/resize"
 	"github.com/radovskyb/watcher"
 	"github.com/shirou/gopsutil/disk"
@@ -49,9 +48,6 @@ import (
 	"time"
 )
 
-var staticHandler http.Handler
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
-
 type Server struct {
 	ldb            *leveldb.DB
 	logDB          *leveldb.DB
@@ -70,11 +66,7 @@ type Server struct {
 	host           string
 }
 
-func NewServer() *Server {
-	var (
-		server *Server
-		err    error
-	)
+func NewServer() (server *Server, err error) {
 	server = &Server{
 		util:           &goutil.Common{},
 		statMap:        goutil.NewCommonMap(0),
@@ -103,6 +95,7 @@ func NewServer() *Server {
 		DumpBody:         true,
 		Transport:        defaultTransport,
 	}
+
 	httplib.SetDefaultSetting(settins)
 	server.statMap.Put(cont.CONST_STAT_FILE_COUNT_KEY, int64(0))
 	server.statMap.Put(cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, int64(0))
@@ -113,12 +106,15 @@ func NewServer() *Server {
 		CompactionTableSize: 1024 * 1024 * 20,
 		WriteBuffer:         1024 * 1024 * 20,
 	}
-	server.ldb, err = leveldb.OpenFile(cont.CONST_LEVELDB_FILE_NAME, opts)
-	if err != nil {
+
+	//
+	if server.ldb, err = leveldb.OpenFile(cont.CONST_LEVELDB_FILE_NAME, opts); err != nil {
 		fmt.Println(fmt.Sprintf("open db file %s fail,maybe has opening", cont.CONST_LEVELDB_FILE_NAME))
 		log.Error(err)
 		panic(err)
 	}
+
+	//
 	server.logDB, err = leveldb.OpenFile(cont.CONST_LOG_LEVELDB_FILE_NAME, opts)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("open db file %s fail,maybe has opening", cont.CONST_LOG_LEVELDB_FILE_NAME))
@@ -126,7 +122,8 @@ func NewServer() *Server {
 		panic(err)
 
 	}
-	return server
+
+	return server, nil
 }
 
 func (server *Server) BackUpMetaDataByDate(date string) {
@@ -2862,7 +2859,7 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 	var (
 		err     error
 		data    []byte
-		cfg     ent.GloablConfig
+		cfg     GlobalConfig
 		action  string
 		cfgjson string
 		result  ent.JsonResult

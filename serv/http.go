@@ -72,7 +72,7 @@ func (HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			status_code,
 			req.RequestURI,
 		)
-		logacc.Info(logStr)
+		logger.Info(logStr)
 	}(time.Now())
 	defer func() {
 		if err := recover(); err != nil {
