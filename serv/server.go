@@ -87,7 +87,7 @@ func NewServer() (server *Server, err error) {
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 100,
 	}
-	settins := httplib.BeegoHTTPSettings{
+	settings := httplib.BeegoHTTPSettings{
 		UserAgent:        "Go-FastDFS",
 		ConnectTimeout:   15 * time.Second,
 		ReadWriteTimeout: 15 * time.Second,
@@ -96,7 +96,7 @@ func NewServer() (server *Server, err error) {
 		Transport:        defaultTransport,
 	}
 
-	httplib.SetDefaultSetting(settins)
+	httplib.SetDefaultSetting(settings)
 	server.statMap.Put(cont.CONST_STAT_FILE_COUNT_KEY, int64(0))
 	server.statMap.Put(cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, int64(0))
 	server.statMap.Put(server.util.GetToDay()+"_"+cont.CONST_STAT_FILE_COUNT_KEY, int64(0))
@@ -2855,69 +2855,6 @@ func (server *Server) RepairFileInfo(w http.ResponseWriter, r *http.Request) {
 	go server.RepairFileInfoFromFile()
 	w.Write([]byte(server.util.JsonEncodePretty(result)))
 }
-func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
-	var (
-		err     error
-		data    []byte
-		cfg     GlobalConfig
-		action  string
-		cfgjson string
-		result  ent.JsonResult
-	)
-	result.Status = "fail"
-	r.ParseForm()
-	if !server.IsPeer(r) {
-		w.Write([]byte(server.GetClusterNotPermitMessage(r)))
-		return
-	}
-	cfgjson = r.FormValue("cfg")
-	action = r.FormValue("action")
-	_ = cfgjson
-	if action == "get" {
-		result.Data = Config()
-		result.Status = "ok"
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
-		return
-	}
-	if action == "set" {
-		if cfgjson == "" {
-			result.Message = "(error)parameter cfg(json) require"
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
-			return
-		}
-		if err = json.Unmarshal([]byte(cfgjson), &cfg); err != nil {
-			log.Error(err)
-			result.Message = err.Error()
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
-			return
-		}
-		result.Status = "ok"
-		cfgjson = server.util.JsonEncodePretty(cfg)
-		server.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfgjson)
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
-		return
-	}
-	if action == "reload" {
-		if data, err = ioutil.ReadFile(cont.CONST_CONF_FILE_NAME); err != nil {
-			result.Message = err.Error()
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
-			return
-		}
-		if err = json.Unmarshal(data, &cfg); err != nil {
-			result.Message = err.Error()
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
-			return
-		}
-		ParseConfig(cont.CONST_CONF_FILE_NAME)
-		server.initComponent(true)
-		result.Status = "ok"
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
-		return
-	}
-	if action == "" {
-		w.Write([]byte("(error)action support set(json) get reload"))
-	}
-}
 func (server *Server) RemoveEmptyDir(w http.ResponseWriter, r *http.Request) {
 	var (
 		result ent.JsonResult
@@ -3644,11 +3581,19 @@ func (server *Server) FormatStatInfo() {
 		server.RepairStatByDate(server.util.GetToDay())
 	}
 }
+
+func Start() {
+	global.start()
+}
+
+// 相关参数配置初始化
+// ---------- ---------- ----------
+// isReload 是否为重新加载
+// ---------- ---------- ----------
 func (server *Server) initComponent(isReload bool) {
-	var (
-		ip string
-	)
-	if ip = os.Getenv("GO_FASTDFS_IP"); ip == "" {
+	//
+	var ip string
+	if ip := os.Getenv("GO_FASTDFS_IP"); ip == "" {
 		ip = server.util.GetPulicIP()
 	}
 	if Config().Host == "" {
@@ -3663,6 +3608,8 @@ func (server *Server) initComponent(isReload bool) {
 			server.host = "http://" + Config().Host
 		}
 	}
+
+	//
 	ex, _ := regexp.Compile("\\d+\\.\\d+\\.\\d+\\.\\d+")
 	var peers []string
 	for _, peer := range Config().Peers {
@@ -3677,12 +3624,16 @@ func (server *Server) initComponent(isReload bool) {
 		}
 	}
 	Config().Peers = peers
+
+	//
 	if !isReload {
 		server.FormatStatInfo()
 		if Config().EnableTus {
 			server.initTus()
 		}
 	}
+
+	//
 	for _, s := range Config().Scenes {
 		kv := strings.Split(s, ":")
 		if len(kv) == 2 {
@@ -3712,15 +3663,20 @@ func (server *Server) initComponent(isReload bool) {
 	}
 }
 
-func (server *Server) Main() {
+// 启动服务组件
+// ---------- ---------- ----------
+func (server *Server) start() {
 	go func() {
 		for {
+			//
 			server.CheckFileAndSendToPeer(server.util.GetToDay(), cont.CONST_Md5_ERROR_FILE_NAME, false)
 			//fmt.Println("CheckFileAndSendToPeer")
 			time.Sleep(time.Second * time.Duration(Config().RefreshInterval))
 			//server.util.RemoveEmptyDir(STORE_DIR)
 		}
 	}()
+
+	//
 	go server.CleanAndBackUp()
 	go server.CheckClusterStatus()
 	go server.LoadQueueSendToPeer()
@@ -3729,13 +3685,16 @@ func (server *Server) Main() {
 	go server.ConsumerDownLoad()
 	go server.ConsumerUpload()
 	go server.RemoveDownloading()
+	//
 	if Config().EnableFsnotify {
 		go server.WatchFilesChange()
 	}
-	//go server.LoadSearchDict()
+	// go server.LoadSearchDict()
+	//
 	if Config().EnableMigrate {
 		go server.RepairFileInfoFromFile()
 	}
+	//
 	if Config().AutoRepair {
 		go func() {
 			for {
@@ -3745,16 +3704,21 @@ func (server *Server) Main() {
 			}
 		}()
 	}
+
+	//
 	groupRoute := ""
 	if Config().SupportGroupManage {
 		groupRoute = "/" + Config().Group
 	}
+	//
 	go func() { // force free memory
 		for {
 			time.Sleep(time.Minute * 1)
 			debug.FreeOSMemory()
 		}
 	}()
+
+	//
 	uploadPage := "upload.html"
 	if groupRoute == "" {
 		http.HandleFunc(fmt.Sprintf("%s", "/"), server.Download)
@@ -3780,13 +3744,15 @@ func (server *Server) Main() {
 	http.HandleFunc(fmt.Sprintf("%s/list_dir", groupRoute), server.ListDir)
 	http.HandleFunc(fmt.Sprintf("%s/remove_empty_dir", groupRoute), server.RemoveEmptyDir)
 	http.HandleFunc(fmt.Sprintf("%s/repair_fileinfo", groupRoute), server.RepairFileInfo)
-	http.HandleFunc(fmt.Sprintf("%s/reload", groupRoute), server.Reload)
+	http.HandleFunc(fmt.Sprintf("%s/reload", groupRoute), server.reload)
 	http.HandleFunc(fmt.Sprintf("%s/syncfile_info", groupRoute), server.SyncFileInfo)
 	http.HandleFunc(fmt.Sprintf("%s/get_md5s_by_date", groupRoute), server.GetMd5sForWeb)
 	http.HandleFunc(fmt.Sprintf("%s/receive_md5s", groupRoute), server.ReceiveMd5s)
 	http.HandleFunc(fmt.Sprintf("%s/gen_google_secret", groupRoute), server.GenGoogleSecret)
 	http.HandleFunc(fmt.Sprintf("%s/gen_google_code", groupRoute), server.GenGoogleCode)
 	http.HandleFunc("/"+Config().Group+"/", server.Download)
+
+	//
 	fmt.Println("Listen on " + Config().Addr)
 	srv := &http.Server{
 		Addr:              Config().Addr,
@@ -3796,11 +3762,78 @@ func (server *Server) Main() {
 		WriteTimeout:      time.Duration(Config().WriteTimeout) * time.Second,
 		IdleTimeout:       time.Duration(Config().IdleTimeout) * time.Second,
 	}
+
+	// 开启HTTP服务, (阻塞主线程)
 	err := srv.ListenAndServe()
-	log.Error(err)
+
+	//
+	_ = log.Error(err)
 	fmt.Println(err)
 }
 
-func Start() {
-	global.Main()
+// 重启初始化加载
+// ------------------------------------
+func (server *Server) reload(w http.ResponseWriter, r *http.Request) {
+	var (
+		data   []byte
+		cfg    GlobalConfig
+		result ent.JsonResult
+	)
+	result.Status = "fail"
+	err := r.ParseForm()
+	if !server.IsPeer(r) {
+		w.Write([]byte(server.GetClusterNotPermitMessage(r)))
+		return
+	}
+	cfgJson := r.FormValue("cfg")
+	action := r.FormValue("action")
+
+	//
+	if action == "get" {
+		result.Data = Config()
+		result.Status = "ok"
+		w.Write([]byte(server.util.JsonEncodePretty(result)))
+		return
+	}
+	//
+	if action == "set" {
+		if cfgJson == "" {
+			result.Message = "(error)parameter cfg(json) require"
+			w.Write([]byte(server.util.JsonEncodePretty(result)))
+			return
+		}
+		if err = json.Unmarshal([]byte(cfgJson), &cfg); err != nil {
+			log.Error(err)
+			result.Message = err.Error()
+			w.Write([]byte(server.util.JsonEncodePretty(result)))
+			return
+		}
+		result.Status = "ok"
+		cfgJson = server.util.JsonEncodePretty(cfg)
+		server.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfgJson)
+		w.Write([]byte(server.util.JsonEncodePretty(result)))
+		return
+	}
+	//
+	if action == "reload" {
+		if data, err = ioutil.ReadFile(cont.CONST_CONF_FILE_NAME); err != nil {
+			result.Message = err.Error()
+			w.Write([]byte(server.util.JsonEncodePretty(result)))
+			return
+		}
+		if err = json.Unmarshal(data, &cfg); err != nil {
+			result.Message = err.Error()
+			_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
+			return
+		}
+		ParseConfig(cont.CONST_CONF_FILE_NAME)
+		server.initComponent(true)
+		result.Status = "ok"
+		_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
+		return
+	}
+	//
+	if action == "" {
+		_, err = w.Write([]byte("(error)action support set(json) get reload"))
+	}
 }

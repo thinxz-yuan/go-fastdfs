@@ -117,6 +117,6 @@ func init() {
 		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(cont.STORE_DIR)))
 	}
 
-	//
+	// 相关参数配置初始化
 	global.initComponent(false)
 }
