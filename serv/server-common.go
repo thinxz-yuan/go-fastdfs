@@ -106,42 +106,6 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 		os.Remove(metaFileName)
 	}
 }
-func (server *Server) RepairStatByDate(date string) ent.StatDateFileInfo {
-	defer func() {
-		if re := recover(); re != nil {
-			buffer := debug.Stack()
-			log.Error("RepairStatByDate")
-			log.Error(re)
-			log.Error(string(buffer))
-		}
-	}()
-	var (
-		err       error
-		keyPrefix string
-		fileInfo  ent.FileInfo
-		fileCount int64
-		fileSize  int64
-		stat      ent.StatDateFileInfo
-	)
-	keyPrefix = "%s_%s_"
-	keyPrefix = fmt.Sprintf(keyPrefix, date, cont.CONST_FILE_Md5_FILE_NAME)
-	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
-	defer iter.Release()
-	for iter.Next() {
-		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
-			continue
-		}
-		fileCount = fileCount + 1
-		fileSize = fileSize + fileInfo.Size
-	}
-	server.statMap.Put(date+"_"+cont.CONST_STAT_FILE_COUNT_KEY, fileCount)
-	server.statMap.Put(date+"_"+cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, fileSize)
-	server.SaveStat()
-	stat.Date = date
-	stat.FileCount = fileCount
-	stat.TotalSize = fileSize
-	return stat
-}
 
 func (server *Server) SaveFileInfoToLevelDB(key string, fileInfo *ent.FileInfo, db *leveldb.DB) (*ent.FileInfo, error) {
 	var (
@@ -751,7 +715,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fileInfo.Scene = scene
-		if _, err = server.CheckScene(scene); err != nil {
+		if _, err = server.checkScene(scene); err != nil {
 			w.Write([]byte(err.Error()))
 			return
 		}
@@ -760,7 +724,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusMovedPermanently)
 			return
 		}
-		if _, err = server.SaveUploadFile(uploadFile, uploadHeader, &fileInfo, r); err != nil {
+		if _, err = server.saveUploadFile(uploadFile, uploadHeader, &fileInfo, r); err != nil {
 			w.Write([]byte(err.Error()))
 			return
 		}
@@ -797,7 +761,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			fileInfo.Md5 = server.util.MD5(server.GetFilePathByInfo(&fileInfo, false))
 		}
 		if Config().EnableMergeSmallFile && fileInfo.Size < cont.CONST_SMALL_FILE_SIZE {
-			if err = server.SaveSmallFile(&fileInfo); err != nil {
+			if err = server.saveSmallFile(&fileInfo); err != nil {
 				log.Error(err)
 				return
 			}
@@ -841,7 +805,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-func (server *Server) SaveUploadFile(file multipart.File, header *multipart.FileHeader, fileInfo *ent.FileInfo, r *http.Request) (*ent.FileInfo, error) {
+func (server *Server) saveUploadFile(file multipart.File, header *multipart.FileHeader, fileInfo *ent.FileInfo, r *http.Request) (*ent.FileInfo, error) {
 	var (
 		err     error
 		outFile *os.File
@@ -924,7 +888,7 @@ func (server *Server) SaveUploadFile(file multipart.File, header *multipart.File
 	//fmt.Println("upload",fileInfo)
 	return fileInfo, nil
 }
-func (server *Server) CheckScene(scene string) (bool, error) {
+func (server *Server) checkScene(scene string) (bool, error) {
 	var (
 		scenes []string
 	)
@@ -939,7 +903,7 @@ func (server *Server) CheckScene(scene string) (bool, error) {
 	}
 	return true, nil
 }
-func (server *Server) SaveSmallFile(fileInfo *ent.FileInfo) error {
+func (server *Server) saveSmallFile(fileInfo *ent.FileInfo) error {
 	var (
 		err      error
 		filename string

@@ -1036,7 +1036,7 @@ func (server *Server) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	result.Data = server.RepairStatByDate(date)
+	result.Data = server.repairStatByDate(date)
 	result.Status = "ok"
 	w.Write([]byte(server.util.JsonEncodePretty(result)))
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/sjqzhang/tusd/filestore"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io"
@@ -523,8 +524,45 @@ func (server *Server) formatStatInfo() {
 			}
 		}
 	} else {
-		server.RepairStatByDate(server.util.GetToDay())
+		server.repairStatByDate(server.util.GetToDay())
 	}
+}
+
+func (server *Server) repairStatByDate(date string) ent.StatDateFileInfo {
+	defer func() {
+		if re := recover(); re != nil {
+			buffer := debug.Stack()
+			log.Error("RepairStatByDate")
+			log.Error(re)
+			log.Error(string(buffer))
+		}
+	}()
+	var (
+		err       error
+		keyPrefix string
+		fileInfo  ent.FileInfo
+		fileCount int64
+		fileSize  int64
+		stat      ent.StatDateFileInfo
+	)
+	keyPrefix = "%s_%s_"
+	keyPrefix = fmt.Sprintf(keyPrefix, date, cont.CONST_FILE_Md5_FILE_NAME)
+	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
+	defer iter.Release()
+	for iter.Next() {
+		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
+			continue
+		}
+		fileCount = fileCount + 1
+		fileSize = fileSize + fileInfo.Size
+	}
+	server.statMap.Put(date+"_"+cont.CONST_STAT_FILE_COUNT_KEY, fileCount)
+	server.statMap.Put(date+"_"+cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, fileSize)
+	server.SaveStat()
+	stat.Date = date
+	stat.FileCount = fileCount
+	stat.TotalSize = fileSize
+	return stat
 }
 
 // 初始化 Tus
