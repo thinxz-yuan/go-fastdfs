@@ -2,27 +2,19 @@ package serv
 
 import (
 	"bufio"
-	"bytes"
-	"errors"
 	"fmt"
 	"github.com/astaxie/beego/httplib"
 	mapset "github.com/deckarep/golang-set"
 	_ "github.com/eventials/go-tus"
 	"github.com/radovskyb/watcher"
 	log "github.com/sjqzhang/seelog"
-	"github.com/sjqzhang/tusd"
-	"github.com/sjqzhang/tusd/filestore"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
-	"io"
 	"io/ioutil"
-	slog "log"
-	"net/http"
 	_ "net/http/pprof"
 	"net/smtp"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -30,7 +22,8 @@ import (
 	"time"
 )
 
-func (server *Server) CheckFileAndSendToPeer(date string, filename string, isForceUpload bool) {
+//
+func (server *Server) checkFileAndSendToPeer(date string, filename string, isForceUpload bool) {
 	var (
 		md5set mapset.Set
 		err    error
@@ -72,247 +65,8 @@ func (server *Server) CheckFileAndSendToPeer(date string, filename string, isFor
 	}
 }
 
-func (server *Server) FormatStatInfo() {
-	var (
-		data  []byte
-		err   error
-		count int64
-		stat  map[string]interface{}
-	)
-	if server.util.FileExists(cont.CONST_STAT_FILE_NAME) {
-		if data, err = server.util.ReadBinFile(cont.CONST_STAT_FILE_NAME); err != nil {
-			log.Error(err)
-		} else {
-			if err = json.Unmarshal(data, &stat); err != nil {
-				log.Error(err)
-			} else {
-				for k, v := range stat {
-					switch v.(type) {
-					case float64:
-						vv := strings.Split(fmt.Sprintf("%f", v), ".")[0]
-						if count, err = strconv.ParseInt(vv, 10, 64); err != nil {
-							log.Error(err)
-						} else {
-							server.statMap.Put(k, count)
-						}
-					default:
-						server.statMap.Put(k, v)
-					}
-				}
-			}
-		}
-	} else {
-		server.RepairStatByDate(server.util.GetToDay())
-	}
-}
-func (server *Server) initTus() {
-	var (
-		err     error
-		fileLog *os.File
-		bigDir  string
-	)
-	BIG_DIR := cont.STORE_DIR + "/_big/" + Config().PeerId
-	os.MkdirAll(BIG_DIR, 0775)
-	os.MkdirAll(cont.LOG_DIR, 0775)
-	store := filestore.FileStore{
-		Path: BIG_DIR,
-	}
-	if fileLog, err = os.OpenFile(cont.LOG_DIR+"/tusd.log", os.O_CREATE|os.O_RDWR, 0666); err != nil {
-		log.Error(err)
-		panic("initTus")
-	}
-	go func() {
-		for {
-			if fi, err := fileLog.Stat(); err != nil {
-				log.Error(err)
-			} else {
-				if fi.Size() > 1024*1024*500 {
-					//500M
-					server.util.CopyFile(cont.LOG_DIR+"/tusd.log", cont.LOG_DIR+"/tusd.log.2")
-					fileLog.Seek(0, 0)
-					fileLog.Truncate(0)
-					fileLog.Seek(0, 2)
-				}
-			}
-			time.Sleep(time.Second * 30)
-		}
-	}()
-	l := slog.New(fileLog, "[tusd] ", slog.LstdFlags)
-	bigDir = cont.CONST_BIG_UPLOAD_PATH_SUFFIX
-	if Config().SupportGroupManage {
-		bigDir = fmt.Sprintf("/%s%s", Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
-	}
-	composer := tusd.NewStoreComposer()
-	// support raw tus upload and download
-	store.GetReaderExt = func(id string) (io.Reader, error) {
-		var (
-			offset int64
-			err    error
-			length int
-			buffer []byte
-			fi     *ent.FileInfo
-			fn     string
-		)
-		if fi, err = server.GetFileInfoFromLevelDB(id); err != nil {
-			log.Error(err)
-			return nil, err
-		} else {
-			if Config().AuthUrl != "" {
-				fileResult := server.util.JsonEncodePretty(server.BuildFileResult(fi, nil))
-				bufferReader := bytes.NewBuffer([]byte(fileResult))
-				return bufferReader, nil
-			}
-			fn = fi.Name
-			if fi.ReName != "" {
-				fn = fi.ReName
-			}
-			fp := cont.DOCKER_DIR + fi.Path + "/" + fn
-			if server.util.FileExists(fp) {
-				log.Info(fmt.Sprintf("download:%s", fp))
-				return os.Open(fp)
-			}
-			ps := strings.Split(fp, ",")
-			if len(ps) > 2 && server.util.FileExists(ps[0]) {
-				if length, err = strconv.Atoi(ps[2]); err != nil {
-					return nil, err
-				}
-				if offset, err = strconv.ParseInt(ps[1], 10, 64); err != nil {
-					return nil, err
-				}
-				if buffer, err = server.util.ReadFileByOffSet(ps[0], offset, length); err != nil {
-					return nil, err
-				}
-				if buffer[0] == '1' {
-					bufferReader := bytes.NewBuffer(buffer[1:])
-					return bufferReader, nil
-				} else {
-					msg := "data no sync"
-					log.Error(msg)
-					return nil, errors.New(msg)
-				}
-			}
-			return nil, errors.New(fmt.Sprintf("%s not found", fp))
-		}
-	}
-	store.UseIn(composer)
-	SetupPreHooks := func(composer *tusd.StoreComposer) {
-		composer.UseCore(hookDataStore{
-			DataStore: composer.Core,
-		})
-	}
-	SetupPreHooks(composer)
-	handler, err := tusd.NewHandler(tusd.Config{
-		Logger:                  l,
-		BasePath:                bigDir,
-		StoreComposer:           composer,
-		NotifyCompleteUploads:   true,
-		RespectForwardedHeaders: true,
-	})
-	notify := func(handler *tusd.Handler) {
-		for {
-			select {
-			case info := <-handler.CompleteUploads:
-				log.Info("CompleteUploads", info)
-				name := ""
-				pathCustom := ""
-				scene := Config().DefaultScene
-				if v, ok := info.MetaData["filename"]; ok {
-					name = v
-				}
-				if v, ok := info.MetaData["scene"]; ok {
-					scene = v
-				}
-				if v, ok := info.MetaData["path"]; ok {
-					pathCustom = v
-				}
-				var err error
-				md5sum := ""
-				oldFullPath := BIG_DIR + "/" + info.ID + ".bin"
-				infoFullPath := BIG_DIR + "/" + info.ID + ".info"
-				if md5sum, err = server.util.GetFileSumByName(oldFullPath, Config().FileSumArithmetic); err != nil {
-					log.Error(err)
-					continue
-				}
-				ext := path.Ext(name)
-				filename := md5sum + ext
-				if name != "" {
-					filename = name
-				}
-				if Config().RenameFile {
-					filename = md5sum + ext
-				}
-				timeStamp := time.Now().Unix()
-				fpath := time.Now().Format("/20060102/15/04/")
-				if pathCustom != "" {
-					fpath = "/" + strings.Replace(pathCustom, ".", "", -1) + "/"
-				}
-				newFullPath := cont.STORE_DIR + "/" + scene + fpath + Config().PeerId + "/" + filename
-				if pathCustom != "" {
-					newFullPath = cont.STORE_DIR + "/" + scene + fpath + filename
-				}
-				if fi, err := server.GetFileInfoFromLevelDB(md5sum); err != nil {
-					log.Error(err)
-				} else {
-					tpath := server.GetFilePathByInfo(fi, true)
-					if fi.Md5 != "" && server.util.FileExists(tpath) {
-						if _, err := server.SaveFileInfoToLevelDB(info.ID, fi, server.ldb); err != nil {
-							log.Error(err)
-						}
-						log.Info(fmt.Sprintf("file is found md5:%s", fi.Md5))
-						log.Info("remove file:", oldFullPath)
-						log.Info("remove file:", infoFullPath)
-						os.Remove(oldFullPath)
-						os.Remove(infoFullPath)
-						continue
-					}
-				}
-				fpath = cont.STORE_DIR_NAME + "/" + Config().DefaultScene + fpath + Config().PeerId
-				os.MkdirAll(cont.DOCKER_DIR+fpath, 0775)
-				fileInfo := &ent.FileInfo{
-					Name:      name,
-					Path:      fpath,
-					ReName:    filename,
-					Size:      info.Size,
-					TimeStamp: timeStamp,
-					Md5:       md5sum,
-					Peers:     []string{server.host},
-					OffSet:    -1,
-				}
-				if err = os.Rename(oldFullPath, newFullPath); err != nil {
-					log.Error(err)
-					continue
-				}
-				log.Info(fileInfo)
-				os.Remove(infoFullPath)
-				if _, err = server.SaveFileInfoToLevelDB(info.ID, fileInfo, server.ldb); err != nil {
-					//assosiate file id
-					log.Error(err)
-				}
-				server.SaveFileMd5Log(fileInfo, cont.CONST_FILE_Md5_FILE_NAME)
-				go server.postFileToPeer(fileInfo)
-				callBack := func(info tusd.FileInfo, fileInfo *ent.FileInfo) {
-					if callback_url, ok := info.MetaData["callback_url"]; ok {
-						req := httplib.Post(callback_url)
-						req.SetTimeout(time.Second*10, time.Second*10)
-						req.Param("info", server.util.JsonEncodePretty(fileInfo))
-						req.Param("id", info.ID)
-						if _, err := req.String(); err != nil {
-							log.Error(err)
-						}
-					}
-				}
-				go callBack(info, fileInfo)
-			}
-		}
-	}
-	go notify(handler)
-	if err != nil {
-		log.Error(err)
-	}
-	http.Handle(bigDir, http.StripPrefix(bigDir, handler))
-}
-
-func (server *Server) CleanAndBackUp() {
+//
+func (server *Server) cleanAndBackUp() {
 	Clean := func() {
 		var (
 			filenames []string
@@ -322,7 +76,7 @@ func (server *Server) CleanAndBackUp() {
 			filenames = []string{cont.CONST_Md5_QUEUE_FILE_NAME, cont.CONST_Md5_ERROR_FILE_NAME, cont.CONST_REMOME_Md5_FILE_NAME}
 			yesterday = server.util.GetDayFromTimeStamp(time.Now().AddDate(0, 0, -1).Unix())
 			for _, filename := range filenames {
-				server.CleanLogLevelDBByDate(yesterday, filename)
+				server.cleanLogLevelDBByDate(yesterday, filename)
 			}
 			server.BackUpMetaDataByDate(yesterday)
 			server.curDate = server.util.GetToDay()
@@ -335,76 +89,7 @@ func (server *Server) CleanAndBackUp() {
 		}
 	}()
 }
-func (server *Server) CheckClusterStatus() {
-	check := func() {
-		defer func() {
-			if re := recover(); re != nil {
-				buffer := debug.Stack()
-				log.Error("CheckClusterStatus")
-				log.Error(re)
-				log.Error(string(buffer))
-			}
-		}()
-		var (
-			status  ent.JsonResult
-			err     error
-			subject string
-			body    string
-			req     *httplib.BeegoHTTPRequest
-		)
-		for _, peer := range Config().Peers {
-			req = httplib.Get(fmt.Sprintf("%s%s", peer, server.getRequestURI("status")))
-			req.SetTimeout(time.Second*5, time.Second*5)
-			err = req.ToJSON(&status)
-			if err != nil || status.Status != "ok" {
-				for _, to := range Config().AlarmReceivers {
-					subject = "fastdfs server error"
-					if err != nil {
-						body = fmt.Sprintf("%s\nserver:%s\nerror:\n%s", subject, peer, err.Error())
-					} else {
-						body = fmt.Sprintf("%s\nserver:%s\n", subject, peer)
-					}
-					if err = server.SendToMail(to, subject, body, "text"); err != nil {
-						log.Error(err)
-					}
-				}
-				if Config().AlarmUrl != "" {
-					req = httplib.Post(Config().AlarmUrl)
-					req.SetTimeout(time.Second*10, time.Second*10)
-					req.Param("message", body)
-					req.Param("subject", subject)
-					if _, err = req.String(); err != nil {
-						log.Error(err)
-					}
-				}
-			}
-		}
-	}
-	go func() {
-		for {
-			time.Sleep(time.Minute * 10)
-			check()
-		}
-	}()
-}
-func (server *Server) SendToMail(to, subject, body, mailtype string) error {
-	host := Config().Mail.Host
-	user := Config().Mail.User
-	password := Config().Mail.Password
-	hp := strings.Split(host, ":")
-	auth := smtp.PlainAuth("", user, password, hp[0])
-	var contentType string
-	if mailtype == "html" {
-		contentType = "Content-Type: text/" + mailtype + "; charset=UTF-8"
-	} else {
-		contentType = "Content-Type: text/plain" + "; charset=UTF-8"
-	}
-	msg := []byte("To: " + to + "\r\nFrom: " + user + ">\r\nSubject: " + "\r\n" + contentType + "\r\n\r\n" + body)
-	sendTo := strings.Split(to, ";")
-	err := smtp.SendMail(host, auth, user, sendTo, msg)
-	return err
-}
-func (server *Server) CleanLogLevelDBByDate(date string, filename string) {
+func (server *Server) cleanLogLevelDBByDate(date string, filename string) {
 	defer func() {
 		if re := recover(); re != nil {
 			buffer := debug.Stack()
@@ -434,8 +119,79 @@ func (server *Server) CleanLogLevelDBByDate(date string, filename string) {
 	}
 }
 
-func (server *Server) LoadQueueSendToPeer() {
-	if queue, err := server.LoadFileInfoByDate(server.util.GetToDay(), cont.CONST_Md5_QUEUE_FILE_NAME); err != nil {
+//
+func (server *Server) checkClusterStatus() {
+	check := func() {
+		defer func() {
+			if re := recover(); re != nil {
+				buffer := debug.Stack()
+				log.Error("CheckClusterStatus")
+				log.Error(re)
+				log.Error(string(buffer))
+			}
+		}()
+		var (
+			status  ent.JsonResult
+			err     error
+			subject string
+			body    string
+			req     *httplib.BeegoHTTPRequest
+		)
+		for _, peer := range Config().Peers {
+			req = httplib.Get(fmt.Sprintf("%s%s", peer, server.getRequestURI("status")))
+			req.SetTimeout(time.Second*5, time.Second*5)
+			err = req.ToJSON(&status)
+			if err != nil || status.Status != "ok" {
+				for _, to := range Config().AlarmReceivers {
+					subject = "fastdfs server error"
+					if err != nil {
+						body = fmt.Sprintf("%s\nserver:%s\nerror:\n%s", subject, peer, err.Error())
+					} else {
+						body = fmt.Sprintf("%s\nserver:%s\n", subject, peer)
+					}
+					if err = server.sendToMail(to, subject, body, "text"); err != nil {
+						log.Error(err)
+					}
+				}
+				if Config().AlarmUrl != "" {
+					req = httplib.Post(Config().AlarmUrl)
+					req.SetTimeout(time.Second*10, time.Second*10)
+					req.Param("message", body)
+					req.Param("subject", subject)
+					if _, err = req.String(); err != nil {
+						log.Error(err)
+					}
+				}
+			}
+		}
+	}
+	go func() {
+		for {
+			time.Sleep(time.Minute * 10)
+			check()
+		}
+	}()
+}
+func (server *Server) sendToMail(to, subject, body, mailtype string) error {
+	host := Config().Mail.Host
+	user := Config().Mail.User
+	password := Config().Mail.Password
+	hp := strings.Split(host, ":")
+	auth := smtp.PlainAuth("", user, password, hp[0])
+	var contentType string
+	if mailtype == "html" {
+		contentType = "Content-Type: text/" + mailtype + "; charset=UTF-8"
+	} else {
+		contentType = "Content-Type: text/plain" + "; charset=UTF-8"
+	}
+	msg := []byte("To: " + to + "\r\nFrom: " + user + ">\r\nSubject: " + "\r\n" + contentType + "\r\n\r\n" + body)
+	sendTo := strings.Split(to, ";")
+	err := smtp.SendMail(host, auth, user, sendTo, msg)
+	return err
+}
+
+func (server *Server) loadQueueSendToPeer() {
+	if queue, err := server.loadFileInfoByDate(server.util.GetToDay(), cont.CONST_Md5_QUEUE_FILE_NAME); err != nil {
 		log.Error(err)
 	} else {
 		for fileInfo := range queue.Iter() {
@@ -444,7 +200,7 @@ func (server *Server) LoadQueueSendToPeer() {
 		}
 	}
 }
-func (server *Server) LoadFileInfoByDate(date string, filename string) (mapset.Set, error) {
+func (server *Server) loadFileInfoByDate(date string, filename string) (mapset.Set, error) {
 	defer func() {
 		if re := recover(); re != nil {
 			buffer := debug.Stack()
@@ -473,7 +229,8 @@ func (server *Server) LoadFileInfoByDate(date string, filename string) (mapset.S
 	return fileInfos, nil
 }
 
-func (server *Server) ConsumerPostToPeer() {
+//
+func (server *Server) consumerPostToPeer() {
 	ConsumerFunc := func() {
 		for {
 			fileInfo := <-server.queueToPeers
@@ -484,7 +241,9 @@ func (server *Server) ConsumerPostToPeer() {
 		go ConsumerFunc()
 	}
 }
-func (server *Server) ConsumerLog() {
+
+//
+func (server *Server) consumerLog() {
 	go func() {
 		var (
 			fileLog *ent.FileLog
@@ -495,7 +254,9 @@ func (server *Server) ConsumerLog() {
 		}
 	}()
 }
-func (server *Server) ConsumerDownLoad() {
+
+//
+func (server *Server) consumerDownLoad() {
 	ConsumerFunc := func() {
 		for {
 			fileInfo := <-server.queueFromPeers
@@ -519,7 +280,9 @@ func (server *Server) ConsumerDownLoad() {
 		go ConsumerFunc()
 	}
 }
-func (server *Server) ConsumerUpload() {
+
+//
+func (server *Server) consumerUpload() {
 	ConsumerFunc := func() {
 		for {
 			wr := <-server.queueUpload
@@ -539,7 +302,9 @@ func (server *Server) ConsumerUpload() {
 		go ConsumerFunc()
 	}
 }
-func (server *Server) RemoveDownloading() {
+
+//
+func (server *Server) removeDownloading() {
 	RemoveDownloadFunc := func() {
 		for {
 			iter := server.ldb.NewIterator(util.BytesPrefix([]byte("downloading_")), nil)
@@ -558,7 +323,9 @@ func (server *Server) RemoveDownloading() {
 	}
 	go RemoveDownloadFunc()
 }
-func (server *Server) WatchFilesChange() {
+
+//
+func (server *Server) watchFilesChange() {
 	var (
 		w        *watcher.Watcher
 		fileInfo ent.FileInfo
@@ -653,7 +420,9 @@ func (server *Server) WatchFilesChange() {
 		log.Error(err)
 	}
 }
-func (server *Server) LoadSearchDict() {
+
+//
+func (server *Server) loadSearchDict() {
 	go func() {
 		log.Info("Load search dict ....")
 		f, err := os.Open(cont.CONST_SEARCH_FILE_NAME)
@@ -675,7 +444,9 @@ func (server *Server) LoadSearchDict() {
 		log.Info("finish load search dict")
 	}()
 }
-func (server *Server) RepairFileInfoFromFile() {
+
+//
+func (server *Server) repairFileInfoFromFile() {
 	var (
 		pathPrefix string
 		err        error
@@ -773,7 +544,9 @@ func (server *Server) RepairFileInfoFromFile() {
 	}
 	log.Info("RepairFileInfoFromFile is finish.")
 }
-func (server *Server) AutoRepair(forceRepair bool) {
+
+//
+func (server *Server) autoRepair(forceRepair bool) {
 	if server.lockMap.IsLock("AutoRepair") {
 		log.Warn("Lock AutoRepair")
 		return

@@ -1,22 +1,30 @@
 package serv
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"github.com/astaxie/beego/httplib"
 	_ "github.com/eventials/go-tus"
 	"github.com/sjqzhang/goutil"
 	log "github.com/sjqzhang/seelog"
+	"github.com/sjqzhang/tusd"
+	"github.com/sjqzhang/tusd/filestore"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
+	"io"
 	"io/ioutil"
+	slog "log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path"
 	"regexp"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -259,7 +267,8 @@ func (server *Server) initComponent(isReload bool) {
 
 	//
 	if !isReload {
-		server.FormatStatInfo()
+		//
+		server.formatStatInfo()
 		if Config().EnableTus {
 			server.initTus()
 		}
@@ -300,8 +309,8 @@ func (server *Server) initComponent(isReload bool) {
 func (server *Server) startComponent() {
 	go func() {
 		for {
-			//
-			server.CheckFileAndSendToPeer(server.util.GetToDay(), cont.CONST_Md5_ERROR_FILE_NAME, false)
+			// 自动检测系统状态 (文件和结点状态)
+			server.checkFileAndSendToPeer(server.util.GetToDay(), cont.CONST_Md5_ERROR_FILE_NAME, false)
 			//fmt.Println("CheckFileAndSendToPeer")
 			time.Sleep(time.Second * time.Duration(Config().RefreshInterval))
 			//server.util.RemoveEmptyDir(STORE_DIR)
@@ -309,29 +318,36 @@ func (server *Server) startComponent() {
 	}()
 
 	//
-	go server.CleanAndBackUp()
-	go server.CheckClusterStatus()
-	go server.LoadQueueSendToPeer()
-	go server.ConsumerPostToPeer()
-	go server.ConsumerLog()
-	go server.ConsumerDownLoad()
-	go server.ConsumerUpload()
-	go server.RemoveDownloading()
+	go server.cleanAndBackUp()
+	//
+	go server.checkClusterStatus()
+	//
+	go server.loadQueueSendToPeer()
+	//
+	go server.consumerPostToPeer()
+	//
+	go server.consumerLog()
+	//
+	go server.consumerDownLoad()
+	//
+	go server.consumerUpload()
+	//
+	go server.removeDownloading()
 	//
 	if Config().EnableFsnotify {
-		go server.WatchFilesChange()
+		go server.watchFilesChange()
 	}
-	// go server.LoadSearchDict()
+	// go server.loadSearchDict()
 	//
 	if Config().EnableMigrate {
-		go server.RepairFileInfoFromFile()
+		go server.repairFileInfoFromFile()
 	}
 	//
 	if Config().AutoRepair {
 		go func() {
 			for {
 				time.Sleep(time.Minute * 3)
-				server.AutoRepair(false)
+				server.autoRepair(false)
 				time.Sleep(time.Minute * 60)
 			}
 		}()
@@ -474,4 +490,247 @@ func (server *Server) reload(w http.ResponseWriter, r *http.Request) {
 	if action == "" {
 		_, err = w.Write([]byte("(error)action support set(json) get reload"))
 	}
+}
+
+// 检测并格式化, stat.json 状态文件
+func (server *Server) formatStatInfo() {
+	var (
+		data  []byte
+		err   error
+		count int64
+		stat  map[string]interface{}
+	)
+	if server.util.FileExists(cont.CONST_STAT_FILE_NAME) {
+		if data, err = server.util.ReadBinFile(cont.CONST_STAT_FILE_NAME); err != nil {
+			log.Error(err)
+		} else {
+			if err = json.Unmarshal(data, &stat); err != nil {
+				log.Error(err)
+			} else {
+				for k, v := range stat {
+					switch v.(type) {
+					case float64:
+						vv := strings.Split(fmt.Sprintf("%f", v), ".")[0]
+						if count, err = strconv.ParseInt(vv, 10, 64); err != nil {
+							log.Error(err)
+						} else {
+							server.statMap.Put(k, count)
+						}
+					default:
+						server.statMap.Put(k, v)
+					}
+				}
+			}
+		}
+	} else {
+		server.RepairStatByDate(server.util.GetToDay())
+	}
+}
+
+// 初始化 Tus
+func (server *Server) initTus() {
+	var (
+		err     error
+		fileLog *os.File
+		bigDir  string
+	)
+	BIG_DIR := cont.STORE_DIR + "/_big/" + Config().PeerId
+	os.MkdirAll(BIG_DIR, 0775)
+	os.MkdirAll(cont.LOG_DIR, 0775)
+	store := filestore.FileStore{
+		Path: BIG_DIR,
+	}
+	if fileLog, err = os.OpenFile(cont.LOG_DIR+"/tusd.log", os.O_CREATE|os.O_RDWR, 0666); err != nil {
+		log.Error(err)
+		panic("initTus")
+	}
+	go func() {
+		for {
+			if fi, err := fileLog.Stat(); err != nil {
+				log.Error(err)
+			} else {
+				if fi.Size() > 1024*1024*500 {
+					//500M
+					server.util.CopyFile(cont.LOG_DIR+"/tusd.log", cont.LOG_DIR+"/tusd.log.2")
+					fileLog.Seek(0, 0)
+					fileLog.Truncate(0)
+					fileLog.Seek(0, 2)
+				}
+			}
+			time.Sleep(time.Second * 30)
+		}
+	}()
+	l := slog.New(fileLog, "[tusd] ", slog.LstdFlags)
+	bigDir = cont.CONST_BIG_UPLOAD_PATH_SUFFIX
+	if Config().SupportGroupManage {
+		bigDir = fmt.Sprintf("/%s%s", Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
+	}
+	composer := tusd.NewStoreComposer()
+	// support raw tus upload and download
+	store.GetReaderExt = func(id string) (io.Reader, error) {
+		var (
+			offset int64
+			err    error
+			length int
+			buffer []byte
+			fi     *ent.FileInfo
+			fn     string
+		)
+		if fi, err = server.GetFileInfoFromLevelDB(id); err != nil {
+			log.Error(err)
+			return nil, err
+		} else {
+			if Config().AuthUrl != "" {
+				fileResult := server.util.JsonEncodePretty(server.BuildFileResult(fi, nil))
+				bufferReader := bytes.NewBuffer([]byte(fileResult))
+				return bufferReader, nil
+			}
+			fn = fi.Name
+			if fi.ReName != "" {
+				fn = fi.ReName
+			}
+			fp := cont.DOCKER_DIR + fi.Path + "/" + fn
+			if server.util.FileExists(fp) {
+				log.Info(fmt.Sprintf("download:%s", fp))
+				return os.Open(fp)
+			}
+			ps := strings.Split(fp, ",")
+			if len(ps) > 2 && server.util.FileExists(ps[0]) {
+				if length, err = strconv.Atoi(ps[2]); err != nil {
+					return nil, err
+				}
+				if offset, err = strconv.ParseInt(ps[1], 10, 64); err != nil {
+					return nil, err
+				}
+				if buffer, err = server.util.ReadFileByOffSet(ps[0], offset, length); err != nil {
+					return nil, err
+				}
+				if buffer[0] == '1' {
+					bufferReader := bytes.NewBuffer(buffer[1:])
+					return bufferReader, nil
+				} else {
+					msg := "data no sync"
+					log.Error(msg)
+					return nil, errors.New(msg)
+				}
+			}
+			return nil, errors.New(fmt.Sprintf("%s not found", fp))
+		}
+	}
+	store.UseIn(composer)
+	SetupPreHooks := func(composer *tusd.StoreComposer) {
+		composer.UseCore(hookDataStore{
+			DataStore: composer.Core,
+		})
+	}
+	SetupPreHooks(composer)
+	handler, err := tusd.NewHandler(tusd.Config{
+		Logger:                  l,
+		BasePath:                bigDir,
+		StoreComposer:           composer,
+		NotifyCompleteUploads:   true,
+		RespectForwardedHeaders: true,
+	})
+	notify := func(handler *tusd.Handler) {
+		for {
+			select {
+			case info := <-handler.CompleteUploads:
+				log.Info("CompleteUploads", info)
+				name := ""
+				pathCustom := ""
+				scene := Config().DefaultScene
+				if v, ok := info.MetaData["filename"]; ok {
+					name = v
+				}
+				if v, ok := info.MetaData["scene"]; ok {
+					scene = v
+				}
+				if v, ok := info.MetaData["path"]; ok {
+					pathCustom = v
+				}
+				var err error
+				md5sum := ""
+				oldFullPath := BIG_DIR + "/" + info.ID + ".bin"
+				infoFullPath := BIG_DIR + "/" + info.ID + ".info"
+				if md5sum, err = server.util.GetFileSumByName(oldFullPath, Config().FileSumArithmetic); err != nil {
+					log.Error(err)
+					continue
+				}
+				ext := path.Ext(name)
+				filename := md5sum + ext
+				if name != "" {
+					filename = name
+				}
+				if Config().RenameFile {
+					filename = md5sum + ext
+				}
+				timeStamp := time.Now().Unix()
+				fpath := time.Now().Format("/20060102/15/04/")
+				if pathCustom != "" {
+					fpath = "/" + strings.Replace(pathCustom, ".", "", -1) + "/"
+				}
+				newFullPath := cont.STORE_DIR + "/" + scene + fpath + Config().PeerId + "/" + filename
+				if pathCustom != "" {
+					newFullPath = cont.STORE_DIR + "/" + scene + fpath + filename
+				}
+				if fi, err := server.GetFileInfoFromLevelDB(md5sum); err != nil {
+					log.Error(err)
+				} else {
+					tpath := server.GetFilePathByInfo(fi, true)
+					if fi.Md5 != "" && server.util.FileExists(tpath) {
+						if _, err := server.SaveFileInfoToLevelDB(info.ID, fi, server.ldb); err != nil {
+							log.Error(err)
+						}
+						log.Info(fmt.Sprintf("file is found md5:%s", fi.Md5))
+						log.Info("remove file:", oldFullPath)
+						log.Info("remove file:", infoFullPath)
+						os.Remove(oldFullPath)
+						os.Remove(infoFullPath)
+						continue
+					}
+				}
+				fpath = cont.STORE_DIR_NAME + "/" + Config().DefaultScene + fpath + Config().PeerId
+				os.MkdirAll(cont.DOCKER_DIR+fpath, 0775)
+				fileInfo := &ent.FileInfo{
+					Name:      name,
+					Path:      fpath,
+					ReName:    filename,
+					Size:      info.Size,
+					TimeStamp: timeStamp,
+					Md5:       md5sum,
+					Peers:     []string{server.host},
+					OffSet:    -1,
+				}
+				if err = os.Rename(oldFullPath, newFullPath); err != nil {
+					log.Error(err)
+					continue
+				}
+				log.Info(fileInfo)
+				os.Remove(infoFullPath)
+				if _, err = server.SaveFileInfoToLevelDB(info.ID, fileInfo, server.ldb); err != nil {
+					//assosiate file id
+					log.Error(err)
+				}
+				server.SaveFileMd5Log(fileInfo, cont.CONST_FILE_Md5_FILE_NAME)
+				go server.postFileToPeer(fileInfo)
+				callBack := func(info tusd.FileInfo, fileInfo *ent.FileInfo) {
+					if callback_url, ok := info.MetaData["callback_url"]; ok {
+						req := httplib.Post(callback_url)
+						req.SetTimeout(time.Second*10, time.Second*10)
+						req.Param("info", server.util.JsonEncodePretty(fileInfo))
+						req.Param("id", info.ID)
+						if _, err := req.String(); err != nil {
+							log.Error(err)
+						}
+					}
+				}
+				go callBack(info, fileInfo)
+			}
+		}
+	}
+	go notify(handler)
+	if err != nil {
+		log.Error(err)
+	}
+	http.Handle(bigDir, http.StripPrefix(bigDir, handler))
 }
