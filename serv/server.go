@@ -383,61 +383,6 @@ func (server *Server) startComponent() {
 	//server.startHttpServe(groupRoute)
 }
 
-//func (server *Server) startHttpServe(groupRoute string) {
-//	//
-//	uploadPage := "upload.html"
-//	if groupRoute == "" {
-//		http.HandleFunc(fmt.Sprintf("%s", "/"), server.Download)
-//		http.HandleFunc(fmt.Sprintf("/%s", uploadPage), server.Index)
-//	} else {
-//		http.HandleFunc(fmt.Sprintf("%s", "/"), server.Download)
-//		http.HandleFunc(fmt.Sprintf("%s", groupRoute), server.Download)
-//		http.HandleFunc(fmt.Sprintf("%s/%s", groupRoute, uploadPage), server.Index)
-//	}
-//
-//	http.HandleFunc(fmt.Sprintf("%s/check_files_exist", groupRoute), server.CheckFilesExist)
-//	http.HandleFunc(fmt.Sprintf("%s/check_file_exist", groupRoute), server.CheckFileExist)
-//	http.HandleFunc(fmt.Sprintf("%s/upload", groupRoute), server.Upload)
-//	http.HandleFunc(fmt.Sprintf("%s/delete", groupRoute), server.RemoveFile)
-//	http.HandleFunc(fmt.Sprintf("%s/get_file_info", groupRoute), server.GetFileInfo)
-//	http.HandleFunc(fmt.Sprintf("%s/sync", groupRoute), server.Sync)
-//	http.HandleFunc(fmt.Sprintf("%s/stat", groupRoute), server.Stat)
-//	http.HandleFunc(fmt.Sprintf("%s/repair_stat", groupRoute), server.RepairStatWeb)
-//	http.HandleFunc(fmt.Sprintf("%s/status", groupRoute), server.Status)
-//	http.HandleFunc(fmt.Sprintf("%s/repair", groupRoute), server.Repair)
-//	http.HandleFunc(fmt.Sprintf("%s/report", groupRoute), server.Report)
-//	http.HandleFunc(fmt.Sprintf("%s/backup", groupRoute), server.BackUp)
-//	http.HandleFunc(fmt.Sprintf("%s/search", groupRoute), server.Search)
-//	http.HandleFunc(fmt.Sprintf("%s/list_dir", groupRoute), server.ListDir)
-//	http.HandleFunc(fmt.Sprintf("%s/remove_empty_dir", groupRoute), server.RemoveEmptyDir)
-//	http.HandleFunc(fmt.Sprintf("%s/repair_fileinfo", groupRoute), server.RepairFileInfo)
-//	http.HandleFunc(fmt.Sprintf("%s/reload", groupRoute), server.reload)
-//	http.HandleFunc(fmt.Sprintf("%s/syncfile_info", groupRoute), server.SyncFileInfo)
-//	http.HandleFunc(fmt.Sprintf("%s/get_md5s_by_date", groupRoute), server.GetMd5sForWeb)
-//	http.HandleFunc(fmt.Sprintf("%s/receive_md5s", groupRoute), server.ReceiveMd5s)
-//	http.HandleFunc(fmt.Sprintf("%s/gen_google_secret", groupRoute), server.GenGoogleSecret)
-//	http.HandleFunc(fmt.Sprintf("%s/gen_google_code", groupRoute), server.GenGoogleCode)
-//	http.HandleFunc("/"+Config().Group+"/", server.Download)
-//
-//	//
-//	fmt.Println("Listen on " + Config().Addr)
-//	srv := &http.Server{
-//		Addr:              Config().Addr,
-//		Handler:           new(HttpHandler),
-//		ReadTimeout:       time.Duration(Config().ReadTimeout) * time.Second,
-//		ReadHeaderTimeout: time.Duration(Config().ReadHeaderTimeout) * time.Second,
-//		WriteTimeout:      time.Duration(Config().WriteTimeout) * time.Second,
-//		IdleTimeout:       time.Duration(Config().IdleTimeout) * time.Second,
-//	}
-//
-//	// 开启HTTP服务, (阻塞主线程)
-//	err := srv.ListenAndServe()
-//
-//	//
-//	_ = log.Error(err)
-//	fmt.Println(err)
-//}
-
 // 重启初始化加载
 // ------------------------------------
 func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
