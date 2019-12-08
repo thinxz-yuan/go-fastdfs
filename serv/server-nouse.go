@@ -34,7 +34,7 @@ func (server *Server) GetMd5File(w http.ResponseWriter, r *http.Request) {
 	if !server.IsPeer(r) {
 		return
 	}
-	fpath = cont.DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
+	fpath = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
 	if !server.util.FileExists(fpath) {
 		w.WriteHeader(404)
 		return
@@ -58,9 +58,9 @@ func (server *Server) GetMd5sMapByDate(date string, filename string) (*goutil.Co
 	)
 	result = goutil.NewCommonMap(0)
 	if filename == "" {
-		fpath = cont.DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
+		fpath = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
 	} else {
-		fpath = cont.DATA_DIR + "/" + date + "/" + filename
+		fpath = DATA_DIR + "/" + date + "/" + filename
 	}
 	if !server.util.FileExists(fpath) {
 		return result, errors.New(fmt.Sprintf("fpath %s not found", fpath))
@@ -130,10 +130,10 @@ func (server *Server) SaveSearchDict() {
 		k          string
 		v          interface{}
 	)
-	server.lockMap.LockKey(cont.CONST_SEARCH_FILE_NAME)
-	defer server.lockMap.UnLockKey(cont.CONST_SEARCH_FILE_NAME)
+	server.lockMap.LockKey(CONST_SEARCH_FILE_NAME)
+	defer server.lockMap.UnLockKey(CONST_SEARCH_FILE_NAME)
 	searchDict = server.searchMap.Get()
-	fp, err = os.OpenFile(cont.CONST_SEARCH_FILE_NAME, os.O_RDWR, 0755)
+	fp, err = os.OpenFile(CONST_SEARCH_FILE_NAME, os.O_RDWR, 0755)
 	if err != nil {
 		log.Error(err)
 		return

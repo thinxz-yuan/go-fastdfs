@@ -9,6 +9,7 @@ import (
 	"github.com/radovskyb/watcher"
 	log "github.com/sjqzhang/seelog"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io/ioutil"
@@ -50,7 +51,7 @@ func (server *Server) checkFileAndSendToPeer(date string, filename string, isFor
 			if isForceUpload {
 				fileInfo.Peers = []string{}
 			}
-			if len(fileInfo.Peers) > len(Config().Peers) {
+			if len(fileInfo.Peers) > len(config.Config().Peers) {
 				continue
 			}
 			if !server.util.Contains(server.host, fileInfo.Peers) {
@@ -137,12 +138,12 @@ func (server *Server) checkClusterStatus() {
 			body    string
 			req     *httplib.BeegoHTTPRequest
 		)
-		for _, peer := range Config().Peers {
+		for _, peer := range config.Config().Peers {
 			req = httplib.Get(fmt.Sprintf("%s%s", peer, server.getRequestURI("status")))
 			req.SetTimeout(time.Second*5, time.Second*5)
 			err = req.ToJSON(&status)
 			if err != nil || status.Status != "ok" {
-				for _, to := range Config().AlarmReceivers {
+				for _, to := range config.Config().AlarmReceivers {
 					subject = "fastdfs server error"
 					if err != nil {
 						body = fmt.Sprintf("%s\nserver:%s\nerror:\n%s", subject, peer, err.Error())
@@ -153,8 +154,8 @@ func (server *Server) checkClusterStatus() {
 						log.Error(err)
 					}
 				}
-				if Config().AlarmUrl != "" {
-					req = httplib.Post(Config().AlarmUrl)
+				if config.Config().AlarmUrl != "" {
+					req = httplib.Post(config.Config().AlarmUrl)
 					req.SetTimeout(time.Second*10, time.Second*10)
 					req.Param("message", body)
 					req.Param("subject", subject)
@@ -173,9 +174,9 @@ func (server *Server) checkClusterStatus() {
 	}()
 }
 func (server *Server) sendToMail(to, subject, body, mailtype string) error {
-	host := Config().Mail.Host
-	user := Config().Mail.User
-	password := Config().Mail.Password
+	host := config.Config().Mail.Host
+	user := config.Config().Mail.User
+	password := config.Config().Mail.Password
 	hp := strings.Split(host, ":")
 	auth := smtp.PlainAuth("", user, password, hp[0])
 	var contentType string
@@ -237,7 +238,7 @@ func (server *Server) consumerPostToPeer() {
 			server.postFileToPeer(&fileInfo)
 		}
 	}
-	for i := 0; i < Config().SyncWorker; i++ {
+	for i := 0; i < config.Config().SyncWorker; i++ {
 		go ConsumerFunc()
 	}
 }
@@ -276,7 +277,7 @@ func (server *Server) consumerDownLoad() {
 			}
 		}
 	}
-	for i := 0; i < Config().SyncWorker; i++ {
+	for i := 0; i < config.Config().SyncWorker; i++ {
 		go ConsumerFunc()
 	}
 }
@@ -287,18 +288,18 @@ func (server *Server) consumerUpload() {
 		for {
 			wr := <-server.queueUpload
 			server.upload(*wr.W, wr.R)
-			server.rtMap.AddCountInt64(cont.CONST_UPLOAD_COUNTER_KEY, wr.R.ContentLength)
-			if v, ok := server.rtMap.GetValue(cont.CONST_UPLOAD_COUNTER_KEY); ok {
+			server.rtMap.AddCountInt64(CONST_UPLOAD_COUNTER_KEY, wr.R.ContentLength)
+			if v, ok := server.rtMap.GetValue(CONST_UPLOAD_COUNTER_KEY); ok {
 				if v.(int64) > 1*1024*1024*1024 {
 					var _v int64
-					server.rtMap.Put(cont.CONST_UPLOAD_COUNTER_KEY, _v)
+					server.rtMap.Put(CONST_UPLOAD_COUNTER_KEY, _v)
 					debug.FreeOSMemory()
 				}
 			}
 			wr.Done <- true
 		}
 	}
-	for i := 0; i < Config().UploadWorker; i++ {
+	for i := 0; i < config.Config().UploadWorker; i++ {
 		go ConsumerFunc()
 	}
 }
@@ -313,7 +314,7 @@ func (server *Server) removeDownloading() {
 				keys := strings.Split(string(key), "_")
 				if len(keys) == 3 {
 					if t, err := strconv.ParseInt(keys[1], 10, 64); err == nil && time.Now().Unix()-t > 60*10 {
-						os.Remove(cont.DOCKER_DIR + keys[2])
+						os.Remove(DOCKER_DIR + keys[2])
 					}
 				}
 			}
@@ -409,13 +410,13 @@ func (server *Server) watchFilesChange() {
 			log.Error(err)
 		}
 		w.Ignore(dir + "/_tmp/")
-		w.Ignore(dir + "/" + cont.LARGE_DIR_NAME + "/")
+		w.Ignore(dir + "/" + LARGE_DIR_NAME + "/")
 	}
 	if err := w.AddRecursive("./" + cont.STORE_DIR_NAME); err != nil {
 		log.Error(err)
 	}
 	w.Ignore("./" + cont.STORE_DIR_NAME + "/_tmp/")
-	w.Ignore("./" + cont.STORE_DIR_NAME + "/" + cont.LARGE_DIR_NAME + "/")
+	w.Ignore("./" + cont.STORE_DIR_NAME + "/" + LARGE_DIR_NAME + "/")
 	if err := w.Start(time.Millisecond * 100); err != nil {
 		log.Error(err)
 	}
@@ -425,7 +426,7 @@ func (server *Server) watchFilesChange() {
 func (server *Server) loadSearchDict() {
 	go func() {
 		log.Info("Load search dict ....")
-		f, err := os.Open(cont.CONST_SEARCH_FILE_NAME)
+		f, err := os.Open(CONST_SEARCH_FILE_NAME)
 		if err != nil {
 			log.Error(err)
 			return
@@ -485,13 +486,13 @@ func (server *Server) repairFileInfoFromFile() {
 					continue
 				}
 				file_path = strings.Replace(file_path, "\\", "/", -1)
-				if cont.DOCKER_DIR != "" {
-					file_path = strings.Replace(file_path, cont.DOCKER_DIR, "", 1)
+				if DOCKER_DIR != "" {
+					file_path = strings.Replace(file_path, DOCKER_DIR, "", 1)
 				}
 				if pathPrefix != "" {
 					file_path = strings.Replace(file_path, pathPrefix, cont.STORE_DIR_NAME, 1)
 				}
-				if strings.HasPrefix(file_path, cont.STORE_DIR_NAME+"/"+cont.LARGE_DIR_NAME) {
+				if strings.HasPrefix(file_path, cont.STORE_DIR_NAME+"/"+LARGE_DIR_NAME) {
 					log.Info(fmt.Sprintf("ignore small file file %s", file_path+"/"+fi.Name()))
 					continue
 				}
@@ -525,7 +526,7 @@ func (server *Server) repairFileInfoFromFile() {
 		}
 		return nil
 	}
-	pathname := cont.STORE_DIR
+	pathname := STORE_DIR
 	pathPrefix, err = os.Readlink(pathname)
 	if err == nil {
 		//link
@@ -582,7 +583,7 @@ func (server *Server) autoRepair(forceRepair bool) {
 			}
 			log.Info(fmt.Sprintf("syn file from %s date %s", peer, dateStat.Date))
 		}
-		for _, peer := range Config().Peers {
+		for _, peer := range config.Config().Peers {
 			req := httplib.Post(fmt.Sprintf("%s%s", peer, server.getRequestURI("stat")))
 			req.Param("inner", "1")
 			req.SetTimeout(time.Second*5, time.Second*15)

@@ -10,6 +10,7 @@ import (
 	log "github.com/sjqzhang/seelog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io"
@@ -45,11 +46,11 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 		metaFileName string
 		fi           os.FileInfo
 	)
-	logFileName = cont.DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
+	logFileName = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
 	server.lockMap.LockKey(logFileName)
 	defer server.lockMap.UnLockKey(logFileName)
-	metaFileName = cont.DATA_DIR + "/" + date + "/" + "meta.data"
-	os.MkdirAll(cont.DATA_DIR+"/"+date, 0775)
+	metaFileName = DATA_DIR + "/" + date + "/" + "meta.data"
+	os.MkdirAll(DATA_DIR+"/"+date, 0775)
 	if server.util.IsExist(logFileName) {
 		os.Remove(logFileName)
 	}
@@ -139,11 +140,11 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *ent.FileInfo) {
 		data        []byte
 		downloadUrl string
 	)
-	if Config().ReadOnly {
+	if config.Config().ReadOnly {
 		log.Warn("ReadOnly", fileInfo)
 		return
 	}
-	if Config().RetryCount > 0 && fileInfo.Retry >= Config().RetryCount {
+	if config.Config().RetryCount > 0 && fileInfo.Retry >= config.Config().RetryCount {
 		log.Error("DownloadFromPeer Error ", fileInfo)
 		return
 	} else {
@@ -153,12 +154,12 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *ent.FileInfo) {
 	if fileInfo.ReName != "" {
 		filename = fileInfo.ReName
 	}
-	if fileInfo.OffSet != -2 && Config().EnableDistinctFile && server.CheckFileExistByInfo(fileInfo.Md5, fileInfo) {
+	if fileInfo.OffSet != -2 && config.Config().EnableDistinctFile && server.CheckFileExistByInfo(fileInfo.Md5, fileInfo) {
 		// ignore migrate file
 		log.Info(fmt.Sprintf("DownloadFromPeer file Exist, path:%s", fileInfo.Path+"/"+fileInfo.Name))
 		return
 	}
-	if (!Config().EnableDistinctFile || fileInfo.OffSet == -2) && server.util.FileExists(server.GetFilePathByInfo(fileInfo, true)) {
+	if (!config.Config().EnableDistinctFile || fileInfo.OffSet == -2) && server.util.FileExists(server.GetFilePathByInfo(fileInfo, true)) {
 		// ignore migrate file
 		if fi, err = os.Stat(server.GetFilePathByInfo(fileInfo, true)); err == nil {
 			if fi.ModTime().Unix() > fileInfo.TimeStamp {
@@ -171,18 +172,18 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *ent.FileInfo) {
 		}
 	}
 	if _, err = os.Stat(fileInfo.Path); err != nil {
-		os.MkdirAll(cont.DOCKER_DIR+fileInfo.Path, 0775)
+		os.MkdirAll(DOCKER_DIR+fileInfo.Path, 0775)
 	}
 	//fmt.Println("downloadFromPeer",fileInfo)
 	p := strings.Replace(fileInfo.Path, cont.STORE_DIR_NAME+"/", "", 1)
 	//filename=server.util.UrlEncode(filename)
-	downloadUrl = peer + "/" + Config().Group + "/" + p + "/" + filename
+	downloadUrl = peer + "/" + config.Config().Group + "/" + p + "/" + filename
 	log.Info("DownloadFromPeer: ", downloadUrl)
-	fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + filename
-	fpathTmp = cont.DOCKER_DIR + fileInfo.Path + "/" + fmt.Sprintf("%s_%s", "tmp_", filename)
+	fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
+	fpathTmp = DOCKER_DIR + fileInfo.Path + "/" + fmt.Sprintf("%s_%s", "tmp_", filename)
 	timeout := fileInfo.Size/1024/1024/1 + 30
-	if Config().SyncTimeout > 0 {
-		timeout = Config().SyncTimeout
+	if config.Config().SyncTimeout > 0 {
+		timeout = config.Config().SyncTimeout
 	}
 	server.lockMap.LockKey(fpath)
 	defer server.lockMap.UnLockKey(fpath)
@@ -276,7 +277,7 @@ func (server *Server) SaveFileMd5Log(fileInfo *ent.FileInfo, filename string) {
 	var (
 		info ent.FileInfo
 	)
-	for len(server.queueFileLog)+len(server.queueFileLog)/10 > cont.CONST_QUEUE_SIZE {
+	for len(server.queueFileLog)+len(server.queueFileLog)/10 > CONST_QUEUE_SIZE {
 		time.Sleep(time.Second * 1)
 	}
 	info = *fileInfo
@@ -284,13 +285,13 @@ func (server *Server) SaveFileMd5Log(fileInfo *ent.FileInfo, filename string) {
 }
 func (server *Server) AppendToQueue(fileInfo *ent.FileInfo) {
 
-	for (len(server.queueToPeers) + cont.CONST_QUEUE_SIZE/10) > cont.CONST_QUEUE_SIZE {
+	for (len(server.queueToPeers) + CONST_QUEUE_SIZE/10) > CONST_QUEUE_SIZE {
 		time.Sleep(time.Millisecond * 50)
 	}
 	server.queueToPeers <- *fileInfo
 }
 func (server *Server) AppendToDownloadQueue(fileInfo *ent.FileInfo) {
-	for (len(server.queueFromPeers) + cont.CONST_QUEUE_SIZE/10) > cont.CONST_QUEUE_SIZE {
+	for (len(server.queueFromPeers) + CONST_QUEUE_SIZE/10) > CONST_QUEUE_SIZE {
 		time.Sleep(time.Millisecond * 50)
 	}
 	server.queueFromPeers <- *fileInfo
@@ -299,8 +300,8 @@ func (server *Server) getRequestURI(action string) string {
 	var (
 		uri string
 	)
-	if Config().SupportGroupManage {
-		uri = "/" + Config().Group + "/" + action
+	if config.Config().SupportGroupManage {
+		uri = "/" + config.Config().Group + "/" + action
 	} else {
 		uri = "/" + action
 	}
@@ -329,7 +330,7 @@ func (server *Server) postFileToPeer(fileInfo *ent.FileInfo) {
 		}
 	}()
 	//fmt.Println("postFile",fileInfo)
-	for i, peer = range Config().Peers {
+	for i, peer = range config.Config().Peers {
 		_ = i
 		if fileInfo.Peers == nil {
 			fileInfo.Peers = []string{}
@@ -344,7 +345,7 @@ func (server *Server) postFileToPeer(fileInfo *ent.FileInfo) {
 				filename = strings.Split(fileInfo.ReName, ",")[0]
 			}
 		}
-		fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + filename
+		fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
 		if !server.util.FileExists(fpath) {
 			log.Warn(fmt.Sprintf("file '%s' not found", fpath))
 			continue
@@ -357,7 +358,7 @@ func (server *Server) postFileToPeer(fileInfo *ent.FileInfo) {
 				}
 			}
 		}
-		if fileInfo.OffSet != -2 && Config().EnableDistinctFile {
+		if fileInfo.OffSet != -2 && config.Config().EnableDistinctFile {
 			//not migrate file should check or update file
 			// where not EnableDistinctFile should check
 			if info, err = server.checkPeerFileExist(peer, fileInfo.Md5, ""); info.Md5 != "" {
@@ -378,7 +379,7 @@ func (server *Server) postFileToPeer(fileInfo *ent.FileInfo) {
 		b.Param("fileInfo", string(data))
 		result, err = b.String()
 		if err != nil {
-			if fileInfo.Retry <= Config().RetryCount {
+			if fileInfo.Retry <= config.Config().RetryCount {
 				fileInfo.Retry = fileInfo.Retry + 1
 				server.AppendToQueue(fileInfo)
 			}
@@ -479,19 +480,19 @@ func (server *Server) BuildFileResult(fileInfo *ent.FileInfo, r *http.Request) e
 		domain      string
 		host        string
 	)
-	host = strings.Replace(Config().Host, "http://", "", -1)
+	host = strings.Replace(config.Config().Host, "http://", "", -1)
 	if r != nil {
 		host = r.Host
 	}
-	if !strings.HasPrefix(Config().DownloadDomain, "http") {
-		if Config().DownloadDomain == "" {
-			Config().DownloadDomain = fmt.Sprintf("http://%s", host)
+	if !strings.HasPrefix(config.Config().DownloadDomain, "http") {
+		if config.Config().DownloadDomain == "" {
+			config.Config().DownloadDomain = fmt.Sprintf("http://%s", host)
 		} else {
-			Config().DownloadDomain = fmt.Sprintf("http://%s", Config().DownloadDomain)
+			config.Config().DownloadDomain = fmt.Sprintf("http://%s", config.Config().DownloadDomain)
 		}
 	}
-	if Config().DownloadDomain != "" {
-		domain = Config().DownloadDomain
+	if config.Config().DownloadDomain != "" {
+		domain = config.Config().DownloadDomain
 	} else {
 		domain = fmt.Sprintf("http://%s", host)
 	}
@@ -500,14 +501,14 @@ func (server *Server) BuildFileResult(fileInfo *ent.FileInfo, r *http.Request) e
 		outname = fileInfo.ReName
 	}
 	p = strings.Replace(fileInfo.Path, cont.STORE_DIR_NAME+"/", "", 1)
-	if Config().SupportGroupManage {
-		p = Config().Group + "/" + p + "/" + outname
+	if config.Config().SupportGroupManage {
+		p = config.Config().Group + "/" + p + "/" + outname
 	} else {
 		p = p + "/" + outname
 	}
 	downloadUrl = fmt.Sprintf("http://%s/%s", host, p)
-	if Config().DownloadDomain != "" {
-		downloadUrl = fmt.Sprintf("%s/%s", Config().DownloadDomain, p)
+	if config.Config().DownloadDomain != "" {
+		downloadUrl = fmt.Sprintf("%s/%s", config.Config().DownloadDomain, p)
 	}
 	fileResult.Url = downloadUrl
 	fileResult.Md5 = fileInfo.Md5
@@ -530,7 +531,7 @@ func (server *Server) GetFilePathByInfo(fileInfo *ent.FileInfo, withDocker bool)
 		fn = fileInfo.ReName
 	}
 	if withDocker {
-		return cont.DOCKER_DIR + fileInfo.Path + "/" + fn
+		return DOCKER_DIR + fileInfo.Path + "/" + fn
 	}
 	return fileInfo.Path + "/" + fn
 }
@@ -592,7 +593,7 @@ func (server *Server) CheckAuth(w http.ResponseWriter, r *http.Request) bool {
 		log.Error(err)
 		return false
 	}
-	req = httplib.Post(Config().AuthUrl)
+	req = httplib.Post(config.Config().AuthUrl)
 	req.SetTimeout(time.Second*10, time.Second*10)
 	req.Param("__path__", r.URL.Path)
 	req.Param("__query__", r.URL.RawQuery)
@@ -652,14 +653,14 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		secret       interface{}
 	)
 	output = r.FormValue("output")
-	if Config().EnableCrossOrigin {
+	if config.Config().EnableCrossOrigin {
 		server.CrossOrigin(w, r)
 		if r.Method == http.MethodOptions {
 			return
 		}
 	}
 
-	if Config().AuthUrl != "" {
+	if config.Config().AuthUrl != "" {
 		if !server.CheckAuth(w, r) {
 			log.Warn("auth fail", r.Form)
 			server.NotPermit(w, r)
@@ -671,11 +672,11 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		md5sum = r.FormValue("md5")
 		fileName = r.FormValue("filename")
 		output = r.FormValue("output")
-		if Config().ReadOnly {
+		if config.Config().ReadOnly {
 			w.Write([]byte("(error) readonly"))
 			return
 		}
-		if Config().EnableCustomPath {
+		if config.Config().EnableCustomPath {
 			fileInfo.Path = r.FormValue("path")
 			fileInfo.Path = strings.Trim(fileInfo.Path, "/")
 		}
@@ -685,9 +686,9 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			//Just for Compatibility
 			scene = r.FormValue("scenes")
 		}
-		if Config().EnableGoogleAuth && scene != "" {
+		if config.Config().EnableGoogleAuth && scene != "" {
 			if secret, ok = server.sceneMap.GetValue(scene); ok {
-				if !server.VerifyGoogleCode(secret.(string), code, int64(Config().DownloadTokenExpire/30)) {
+				if !server.VerifyGoogleCode(secret.(string), code, int64(config.Config().DownloadTokenExpire/30)) {
 					server.NotPermit(w, r)
 					w.Write([]byte("invalid request,error google code"))
 					return
@@ -705,7 +706,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		fileInfo.Peers = []string{}
 		fileInfo.TimeStamp = time.Now().Unix()
 		if scene == "" {
-			scene = Config().DefaultScene
+			scene = config.Config().DefaultScene
 		}
 		if output == "" {
 			output = "text"
@@ -728,13 +729,13 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		if Config().EnableDistinctFile {
+		if config.Config().EnableDistinctFile {
 			if v, _ := server.GetFileInfoFromLevelDB(fileInfo.Md5); v != nil && v.Md5 != "" {
 				fileResult = server.BuildFileResult(v, r)
-				if Config().RenameFile {
-					os.Remove(cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName)
+				if config.Config().RenameFile {
+					os.Remove(DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName)
 				} else {
-					os.Remove(cont.DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name)
+					os.Remove(DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name)
 				}
 				if output == "json" {
 					if data, err = json.Marshal(fileResult); err != nil {
@@ -756,11 +757,11 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			log.Warn(" fileInfo.Md5 and md5sum !=")
 			return
 		}
-		if !Config().EnableDistinctFile {
+		if !config.Config().EnableDistinctFile {
 			// bugfix filecount stat
 			fileInfo.Md5 = server.util.MD5(server.GetFilePathByInfo(&fileInfo, false))
 		}
-		if Config().EnableMergeSmallFile && fileInfo.Size < cont.CONST_SMALL_FILE_SIZE {
+		if config.Config().EnableMergeSmallFile && fileInfo.Size < cont.CONST_SMALL_FILE_SIZE {
 			if err = server.saveSmallFile(&fileInfo); err != nil {
 				log.Error(err)
 				return
@@ -815,27 +816,27 @@ func (server *Server) saveUploadFile(file multipart.File, header *multipart.File
 	defer file.Close()
 	_, fileInfo.Name = filepath.Split(header.Filename)
 	// bugfix for ie upload file contain fullpath
-	if len(Config().Extensions) > 0 && !server.util.Contains(path.Ext(fileInfo.Name), Config().Extensions) {
+	if len(config.Config().Extensions) > 0 && !server.util.Contains(path.Ext(fileInfo.Name), config.Config().Extensions) {
 		return fileInfo, errors.New("(error)file extension mismatch")
 	}
 
-	if Config().RenameFile {
+	if config.Config().RenameFile {
 		fileInfo.ReName = server.util.MD5(server.util.GetUUID()) + path.Ext(fileInfo.Name)
 	}
 	folder = time.Now().Format("20060102/15/04")
-	if Config().PeerId != "" {
-		folder = fmt.Sprintf(folder+"/%s", Config().PeerId)
+	if config.Config().PeerId != "" {
+		folder = fmt.Sprintf(folder+"/%s", config.Config().PeerId)
 	}
 	if fileInfo.Scene != "" {
-		folder = fmt.Sprintf(cont.STORE_DIR+"/%s/%s", fileInfo.Scene, folder)
+		folder = fmt.Sprintf(STORE_DIR+"/%s/%s", fileInfo.Scene, folder)
 	} else {
-		folder = fmt.Sprintf(cont.STORE_DIR+"/%s", folder)
+		folder = fmt.Sprintf(STORE_DIR+"/%s", folder)
 	}
 	if fileInfo.Path != "" {
-		if strings.HasPrefix(fileInfo.Path, cont.STORE_DIR) {
+		if strings.HasPrefix(fileInfo.Path, STORE_DIR) {
 			folder = fileInfo.Path
 		} else {
-			folder = cont.STORE_DIR + "/" + fileInfo.Path
+			folder = STORE_DIR + "/" + fileInfo.Path
 		}
 	}
 	if !server.util.FileExists(folder) {
@@ -845,7 +846,7 @@ func (server *Server) saveUploadFile(file multipart.File, header *multipart.File
 	if fileInfo.ReName != "" {
 		outPath = fmt.Sprintf(folder+"/%s", fileInfo.ReName)
 	}
-	if server.util.FileExists(outPath) && Config().EnableDistinctFile {
+	if server.util.FileExists(outPath) && config.Config().EnableDistinctFile {
 		for i := 0; i < 10000; i++ {
 			outPath = fmt.Sprintf(folder+"/%d_%s", i, filepath.Base(header.Filename))
 			fileInfo.Name = fmt.Sprintf("%d_%s", i, header.Filename)
@@ -876,14 +877,14 @@ func (server *Server) saveUploadFile(file multipart.File, header *multipart.File
 		return fileInfo, errors.New("(error)file uncomplete")
 	}
 	v := "" // server.util.GetFileSum(outFile, Config().FileSumArithmetic)
-	if Config().EnableDistinctFile {
-		v = server.util.GetFileSum(outFile, Config().FileSumArithmetic)
+	if config.Config().EnableDistinctFile {
+		v = server.util.GetFileSum(outFile, config.Config().FileSumArithmetic)
 	} else {
 		v = server.util.MD5(server.GetFilePathByInfo(fileInfo, false))
 	}
 	fileInfo.Md5 = v
 	//fileInfo.Path = folder //strings.Replace( folder,DOCKER_DIR,"",1)
-	fileInfo.Path = strings.Replace(folder, cont.DOCKER_DIR, "", 1)
+	fileInfo.Path = strings.Replace(folder, DOCKER_DIR, "", 1)
 	fileInfo.Peers = append(fileInfo.Peers, server.host)
 	//fmt.Println("upload",fileInfo)
 	return fileInfo, nil
@@ -892,10 +893,10 @@ func (server *Server) checkScene(scene string) (bool, error) {
 	var (
 		scenes []string
 	)
-	if len(Config().Scenes) == 0 {
+	if len(config.Config().Scenes) == 0 {
 		return true, nil
 	}
-	for _, s := range Config().Scenes {
+	for _, s := range config.Config().Scenes {
 		scenes = append(scenes, strings.Split(s, ":")[0])
 	}
 	if !server.util.Contains(scene, scenes) {
@@ -920,8 +921,8 @@ func (server *Server) saveSmallFile(fileInfo *ent.FileInfo) error {
 	if fileInfo.ReName != "" {
 		filename = fileInfo.ReName
 	}
-	fpath = cont.DOCKER_DIR + fileInfo.Path + "/" + filename
-	largeDir = cont.LARGE_DIR + "/" + Config().PeerId
+	fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
+	largeDir = LARGE_DIR + "/" + config.Config().PeerId
 	if !server.util.FileExists(largeDir) {
 		os.MkdirAll(largeDir, 0775)
 	}
@@ -957,7 +958,7 @@ func (server *Server) saveSmallFile(fileInfo *ent.FileInfo) error {
 		}
 		srcFile.Close()
 		os.Remove(fpath)
-		fileInfo.Path = strings.Replace(largeDir, cont.DOCKER_DIR, "", 1)
+		fileInfo.Path = strings.Replace(largeDir, DOCKER_DIR, "", 1)
 	}
 	return nil
 }

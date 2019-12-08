@@ -6,6 +6,7 @@ import (
 	_ "github.com/eventials/go-tus"
 	jsoniter "github.com/json-iterator/go"
 	log "github.com/sjqzhang/seelog"
+	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"net/http"
 	_ "net/http/pprof"
@@ -28,10 +29,63 @@ var (
 	global *Server
 )
 
+var (
+	VERSION          string
+	BUILD_TIME       string
+	GO_VERSION       string
+	GIT_VERSION      string
+	CONST_QUEUE_SIZE = 10000
+)
+
+var (
+	FOLDERS    = []string{DATA_DIR, STORE_DIR, CONF_DIR, STATIC_DIR}
+	DATA_DIR   = cont.DATA_DIR_NAME
+	STORE_DIR  = cont.STORE_DIR_NAME
+	CONF_DIR   = cont.CONF_DIR_NAME
+	STATIC_DIR = cont.STATIC_DIR_NAME
+)
+
+var (
+	DOCKER_DIR                  = ""
+	LOG_DIR                     = cont.LOG_DIR_NAME
+	LARGE_DIR_NAME              = "haystack"
+	LARGE_DIR                   = STORE_DIR + "/haystack"
+	CONST_LEVELDB_FILE_NAME     = DATA_DIR + "/fileserver.db"
+	CONST_LOG_LEVELDB_FILE_NAME = DATA_DIR + "/log.db"
+	CONST_STAT_FILE_NAME        = DATA_DIR + "/stat.json"
+	CONST_CONF_FILE_NAME        = CONF_DIR + "/cfg.json"
+	CONST_SEARCH_FILE_NAME      = DATA_DIR + "/search.txt"
+	CONST_UPLOAD_COUNTER_KEY    = "__CONST_UPLOAD_COUNTER_KEY__"
+	LogConfigStr                = `
+<seelog type="asynctimer" asyncinterval="1000" minlevel="trace" maxlevel="error">  
+	<outputs formatid="common">  
+		<buffered formatid="common" size="1048576" flushperiod="1000">  
+			<rollingfile type="size" filename="{DOCKER_DIR}log/fileserver.log" maxsize="104857600" maxrolls="10"/>  
+		</buffered>
+	</outputs>  	  
+	 <formats>
+		 <format id="common" format="%Date %Time [%LEV] [%File:%Line] [%Func] %Msg%n" />  
+	 </formats>  
+</seelog>
+`
+	LogAccessConfigStr = `
+<seelog type="asynctimer" asyncinterval="1000" minlevel="trace" maxlevel="error">  
+	<outputs formatid="common">  
+		<buffered formatid="common" size="1048576" flushperiod="1000">  
+			<rollingfile type="size" filename="{DOCKER_DIR}log/access.log" maxsize="104857600" maxrolls="10"/>  
+		</buffered>
+	</outputs>  	  
+	 <formats>
+		 <format id="common" format="%Date %Time [%LEV] [%File:%Line] [%Func] %Msg%n" />  
+	 </formats>  
+</seelog>
+`
+)
+
 func init() {
 	flag.Parse()
 	if *v {
-		fmt.Printf("%s\n%s\n%s\n%s\n", cont.VERSION, cont.BUILD_TIME, cont.GO_VERSION, cont.GIT_VERSION)
+		fmt.Printf("%s\n%s\n%s\n%s\n", VERSION, BUILD_TIME, GO_VERSION, GIT_VERSION)
 		os.Exit(0)
 	}
 
@@ -47,31 +101,31 @@ func init() {
 	}
 
 	//
-	cont.DOCKER_DIR = os.Getenv("GO_FASTDFS_DIR")
-	if cont.DOCKER_DIR != "" {
-		if !strings.HasSuffix(cont.DOCKER_DIR, "/") {
-			cont.DOCKER_DIR = cont.DOCKER_DIR + "/"
+	DOCKER_DIR = os.Getenv("GO_FASTDFS_DIR")
+	if DOCKER_DIR != "" {
+		if !strings.HasSuffix(DOCKER_DIR, "/") {
+			DOCKER_DIR = DOCKER_DIR + "/"
 		}
 	}
 
 	//
-	cont.STORE_DIR = cont.DOCKER_DIR + cont.STORE_DIR_NAME
-	cont.CONF_DIR = cont.DOCKER_DIR + cont.CONF_DIR_NAME
-	cont.DATA_DIR = cont.DOCKER_DIR + cont.DATA_DIR_NAME
-	cont.LOG_DIR = cont.DOCKER_DIR + cont.LOG_DIR_NAME
-	cont.STATIC_DIR = cont.DOCKER_DIR + cont.STATIC_DIR_NAME
-	cont.LARGE_DIR_NAME = "haystack"
-	cont.LARGE_DIR = cont.STORE_DIR + "/haystack"
-	cont.CONST_LEVELDB_FILE_NAME = cont.DATA_DIR + "/fileserver.db"
-	cont.CONST_LOG_LEVELDB_FILE_NAME = cont.DATA_DIR + "/log.db"
-	cont.CONST_STAT_FILE_NAME = cont.DATA_DIR + "/stat.json"
-	cont.CONST_CONF_FILE_NAME = cont.CONF_DIR + "/cfg.json"
-	cont.CONST_SEARCH_FILE_NAME = cont.DATA_DIR + "/search.txt"
-	cont.FOLDERS = []string{cont.DATA_DIR, cont.STORE_DIR, cont.CONF_DIR, cont.STATIC_DIR}
-	cont.LogAccessConfigStr = strings.Replace(cont.LogAccessConfigStr, "{DOCKER_DIR}", cont.DOCKER_DIR, -1)
-	cont.LogConfigStr = strings.Replace(cont.LogConfigStr, "{DOCKER_DIR}", cont.DOCKER_DIR, -1)
+	STORE_DIR = DOCKER_DIR + cont.STORE_DIR_NAME
+	CONF_DIR = DOCKER_DIR + cont.CONF_DIR_NAME
+	DATA_DIR = DOCKER_DIR + cont.DATA_DIR_NAME
+	LOG_DIR = DOCKER_DIR + cont.LOG_DIR_NAME
+	STATIC_DIR = DOCKER_DIR + cont.STATIC_DIR_NAME
+	LARGE_DIR_NAME = "haystack"
+	LARGE_DIR = STORE_DIR + "/haystack"
+	CONST_LEVELDB_FILE_NAME = DATA_DIR + "/fileserver.db"
+	CONST_LOG_LEVELDB_FILE_NAME = DATA_DIR + "/log.db"
+	CONST_STAT_FILE_NAME = DATA_DIR + "/stat.json"
+	CONST_CONF_FILE_NAME = CONF_DIR + "/cfg.json"
+	CONST_SEARCH_FILE_NAME = DATA_DIR + "/search.txt"
+	FOLDERS = []string{DATA_DIR, STORE_DIR, CONF_DIR, STATIC_DIR}
+	LogAccessConfigStr = strings.Replace(LogAccessConfigStr, "{DOCKER_DIR}", DOCKER_DIR, -1)
+	LogConfigStr = strings.Replace(LogConfigStr, "{DOCKER_DIR}", DOCKER_DIR, -1)
 	//
-	for _, folder := range cont.FOLDERS {
+	for _, folder := range FOLDERS {
 		os.MkdirAll(folder, 0775)
 	}
 
@@ -80,23 +134,23 @@ func init() {
 
 	//
 	peerId := fmt.Sprintf("%d", global.util.RandInt(0, 9))
-	if !global.util.FileExists(cont.CONST_CONF_FILE_NAME) {
+	if !global.util.FileExists(CONST_CONF_FILE_NAME) {
 		var ip string
 		if ip = os.Getenv("GO_FASTDFS_IP"); ip == "" {
 			ip = global.util.GetPulicIP()
 		}
 		peer := "http://" + ip + ":8080"
 		cfg := fmt.Sprintf(cont.CfgJson, peerId, peer, peer)
-		global.util.WriteFile(cont.CONST_CONF_FILE_NAME, cfg)
+		global.util.WriteFile(CONST_CONF_FILE_NAME, cfg)
 	}
 
 	//
-	if logger, err := log.LoggerFromConfigAsBytes([]byte(cont.LogConfigStr)); err != nil {
+	if logger, err := log.LoggerFromConfigAsBytes([]byte(LogConfigStr)); err != nil {
 		panic(err)
 	} else {
 		log.ReplaceLogger(logger)
 	}
-	if _logger, err := log.LoggerFromConfigAsBytes([]byte(cont.LogAccessConfigStr)); err == nil {
+	if _logger, err := log.LoggerFromConfigAsBytes([]byte(LogAccessConfigStr)); err == nil {
 		logger = _logger
 		log.Info("succes init log access")
 	} else {
@@ -104,17 +158,17 @@ func init() {
 	}
 
 	//
-	ParseConfig(cont.CONST_CONF_FILE_NAME)
-	if Config().QueueSize == 0 {
-		Config().QueueSize = cont.CONST_QUEUE_SIZE
+	config.ParseConfig(CONST_CONF_FILE_NAME)
+	if config.Config().QueueSize == 0 {
+		config.Config().QueueSize = CONST_QUEUE_SIZE
 	}
-	if Config().PeerId == "" {
-		Config().PeerId = peerId
+	if config.Config().PeerId == "" {
+		config.Config().PeerId = peerId
 	}
-	if Config().SupportGroupManage {
-		staticHandler = http.StripPrefix("/"+Config().Group+"/", http.FileServer(http.Dir(cont.STORE_DIR)))
+	if config.Config().SupportGroupManage {
+		staticHandler = http.StripPrefix("/"+config.Config().Group+"/", http.FileServer(http.Dir(STORE_DIR)))
 	} else {
-		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(cont.STORE_DIR)))
+		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(STORE_DIR)))
 	}
 
 	// 相关参数配置初始化

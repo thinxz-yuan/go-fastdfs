@@ -1,4 +1,4 @@
-package serv
+package config
 
 import (
 	"fmt"
@@ -10,13 +10,19 @@ import (
 	"unsafe"
 
 	_ "github.com/eventials/go-tus"
+	jsoniter "github.com/json-iterator/go"
 	log "github.com/sjqzhang/seelog"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 )
 
 var (
-	ptr unsafe.Pointer
+	ptr  unsafe.Pointer
+	json = jsoniter.ConfigCompatibleWithStandardLibrary
+)
+
+var (
+	FileName string
 )
 
 type GlobalConfig struct {
@@ -84,7 +90,7 @@ func ParseConfig(filePath string) {
 			panic(fmt.Sprintln("open file path:", filePath, "error:", err))
 		}
 		defer file.Close()
-		cont.FileName = filePath
+		FileName = filePath
 		data, err = ioutil.ReadAll(file)
 		if err != nil {
 			panic(fmt.Sprintln("file path:", filePath, " read all error:", err))
