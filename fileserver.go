@@ -8,5 +8,5 @@ import (
 func main() {
 	s := serv.Start()
 
-	web.StartHttpServe(s, "")
+	web.StartHttpServe(s, s.GroupName())
 }

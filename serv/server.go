@@ -47,6 +47,7 @@ type Server struct {
 	searchMap      *goutil.CommonMap
 	curDate        string
 	host           string
+	groupName      string
 }
 
 func NewServer() (server *Server, err error) {
@@ -233,6 +234,10 @@ func (server *Server) GetLogger() log.LoggerInterface {
 	return logger
 }
 
+func (server *Server) GroupName() string {
+	return server.groupName
+}
+
 func Start() *Server {
 	//
 	global.startComponent()
@@ -366,21 +371,18 @@ func (server *Server) startComponent() {
 		}()
 	}
 
-	//
-	//groupRoute := ""
-	//if Config().SupportGroupManage {
-	//	groupRoute = "/" + Config().Group
-	//}
-	//
+	groupRoute := ""
+	if config.Config().SupportGroupManage {
+		groupRoute = "/" + config.Config().Group
+	}
+	server.groupName = groupRoute
+
 	go func() { // force free memory
 		for {
 			time.Sleep(time.Minute * 1)
 			debug.FreeOSMemory()
 		}
 	}()
-
-	//
-	//server.startHttpServe(groupRoute)
 }
 
 // 重启初始化加载
