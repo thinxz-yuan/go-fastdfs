@@ -14,7 +14,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/thinxz-yuan/go-fastdfs/common"
-	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"io"
 	"io/ioutil"
@@ -203,12 +202,12 @@ func (server *Server) IsPeer(r *http.Request) bool {
 	if ip == "127.0.0.1" || ip == realIp {
 		return true
 	}
-	if server.util.Contains(ip, config.Config().AdminIps) {
+	if server.util.Contains(ip, common.Config().AdminIps) {
 		return true
 	}
 	ip = "http://" + ip
 	bflag = false
-	for _, peer = range config.Config().Peers {
+	for _, peer = range common.Config().Peers {
 		if strings.HasPrefix(peer, ip) {
 			bflag = true
 			break
@@ -254,23 +253,23 @@ func (server *Server) initComponent(isReload bool) {
 	if ip := os.Getenv("GO_FASTDFS_IP"); ip == "" {
 		ip = server.util.GetPulicIP()
 	}
-	if config.Config().Host == "" {
-		if len(strings.Split(config.Config().Addr, ":")) == 2 {
-			server.host = fmt.Sprintf("http://%s:%s", ip, strings.Split(config.Config().Addr, ":")[1])
-			config.Config().Host = server.host
+	if common.Config().Host == "" {
+		if len(strings.Split(common.Config().Addr, ":")) == 2 {
+			server.host = fmt.Sprintf("http://%s:%s", ip, strings.Split(common.Config().Addr, ":")[1])
+			common.Config().Host = server.host
 		}
 	} else {
-		if strings.HasPrefix(config.Config().Host, "http") {
-			server.host = config.Config().Host
+		if strings.HasPrefix(common.Config().Host, "http") {
+			server.host = common.Config().Host
 		} else {
-			server.host = "http://" + config.Config().Host
+			server.host = "http://" + common.Config().Host
 		}
 	}
 
 	//
 	ex, _ := regexp.Compile("\\d+\\.\\d+\\.\\d+\\.\\d+")
 	var peers []string
-	for _, peer := range config.Config().Peers {
+	for _, peer := range common.Config().Peers {
 		if server.util.Contains(ip, ex.FindAllString(peer, -1)) ||
 			server.util.Contains("127.0.0.1", ex.FindAllString(peer, -1)) {
 			continue
@@ -281,44 +280,44 @@ func (server *Server) initComponent(isReload bool) {
 			peers = append(peers, "http://"+peer)
 		}
 	}
-	config.Config().Peers = peers
+	common.Config().Peers = peers
 
 	//
 	if !isReload {
 		//
 		server.formatStatInfo()
-		if config.Config().EnableTus {
+		if common.Config().EnableTus {
 			server.initTus()
 		}
 	}
 
 	//
-	for _, s := range config.Config().Scenes {
+	for _, s := range common.Config().Scenes {
 		kv := strings.Split(s, ":")
 		if len(kv) == 2 {
 			server.sceneMap.Put(kv[0], kv[1])
 		}
 	}
-	if config.Config().ReadTimeout == 0 {
-		config.Config().ReadTimeout = 60 * 10
+	if common.Config().ReadTimeout == 0 {
+		common.Config().ReadTimeout = 60 * 10
 	}
-	if config.Config().WriteTimeout == 0 {
-		config.Config().WriteTimeout = 60 * 10
+	if common.Config().WriteTimeout == 0 {
+		common.Config().WriteTimeout = 60 * 10
 	}
-	if config.Config().SyncWorker == 0 {
-		config.Config().SyncWorker = 200
+	if common.Config().SyncWorker == 0 {
+		common.Config().SyncWorker = 200
 	}
-	if config.Config().UploadWorker == 0 {
-		config.Config().UploadWorker = runtime.NumCPU() + 4
+	if common.Config().UploadWorker == 0 {
+		common.Config().UploadWorker = runtime.NumCPU() + 4
 		if runtime.NumCPU() < 4 {
-			config.Config().UploadWorker = 8
+			common.Config().UploadWorker = 8
 		}
 	}
-	if config.Config().UploadQueueSize == 0 {
-		config.Config().UploadQueueSize = 200
+	if common.Config().UploadQueueSize == 0 {
+		common.Config().UploadQueueSize = 200
 	}
-	if config.Config().RetryCount == 0 {
-		config.Config().RetryCount = 3
+	if common.Config().RetryCount == 0 {
+		common.Config().RetryCount = 3
 	}
 }
 
@@ -330,7 +329,7 @@ func (server *Server) startComponent() {
 			// 自动检测系统状态 (文件和结点状态)
 			server.checkFileAndSendToPeer(server.util.GetToDay(), cont.CONST_Md5_ERROR_FILE_NAME, false)
 			//fmt.Println("CheckFileAndSendToPeer")
-			time.Sleep(time.Second * time.Duration(config.Config().RefreshInterval))
+			time.Sleep(time.Second * time.Duration(common.Config().RefreshInterval))
 			//server.util.RemoveEmptyDir(STORE_DIR)
 		}
 	}()
@@ -352,16 +351,16 @@ func (server *Server) startComponent() {
 	//
 	go server.removeDownloading()
 	//
-	if config.Config().EnableFsnotify {
+	if common.Config().EnableFsnotify {
 		go server.watchFilesChange()
 	}
 	// go server.loadSearchDict()
 	//
-	if config.Config().EnableMigrate {
+	if common.Config().EnableMigrate {
 		go server.repairFileInfoFromFile()
 	}
 	//
-	if config.Config().AutoRepair {
+	if common.Config().AutoRepair {
 		go func() {
 			for {
 				time.Sleep(time.Minute * 3)
@@ -372,8 +371,8 @@ func (server *Server) startComponent() {
 	}
 
 	groupRoute := ""
-	if config.Config().SupportGroupManage {
-		groupRoute = "/" + config.Config().Group
+	if common.Config().SupportGroupManage {
+		groupRoute = "/" + common.Config().Group
 	}
 	server.groupName = groupRoute
 
@@ -390,7 +389,7 @@ func (server *Server) startComponent() {
 func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 	var (
 		data   []byte
-		cfg    config.GlobalConfig
+		cfg    common.GlobalConfig
 		result common.JsonResult
 	)
 	result.Status = "fail"
@@ -404,7 +403,7 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 
 	//
 	if action == "get" {
-		result.Data = config.Config()
+		result.Data = common.Config()
 		result.Status = "ok"
 		w.Write([]byte(server.util.JsonEncodePretty(result)))
 		return
@@ -440,7 +439,7 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 			_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
 			return
 		}
-		config.ParseConfig(CONST_CONF_FILE_NAME)
+		common.ParseConfig(CONST_CONF_FILE_NAME)
 		server.initComponent(true)
 		result.Status = "ok"
 		_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
@@ -531,7 +530,7 @@ func (server *Server) initTus() {
 		fileLog *os.File
 		bigDir  string
 	)
-	BIG_DIR := STORE_DIR + "/_big/" + config.Config().PeerId
+	BIG_DIR := STORE_DIR + "/_big/" + common.Config().PeerId
 	os.MkdirAll(BIG_DIR, 0775)
 	os.MkdirAll(LOG_DIR, 0775)
 	store := filestore.FileStore{
@@ -559,8 +558,8 @@ func (server *Server) initTus() {
 	}()
 	l := slog.New(fileLog, "[tusd] ", slog.LstdFlags)
 	bigDir = cont.CONST_BIG_UPLOAD_PATH_SUFFIX
-	if config.Config().SupportGroupManage {
-		bigDir = fmt.Sprintf("/%s%s", config.Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
+	if common.Config().SupportGroupManage {
+		bigDir = fmt.Sprintf("/%s%s", common.Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
 	}
 	composer := tusd.NewStoreComposer()
 	// support raw tus upload and download
@@ -577,7 +576,7 @@ func (server *Server) initTus() {
 			log.Error(err)
 			return nil, err
 		} else {
-			if config.Config().AuthUrl != "" {
+			if common.Config().AuthUrl != "" {
 				fileResult := server.util.JsonEncodePretty(server.BuildFileResult(fi, nil))
 				bufferReader := bytes.NewBuffer([]byte(fileResult))
 				return bufferReader, nil
@@ -635,7 +634,7 @@ func (server *Server) initTus() {
 				log.Info("CompleteUploads", info)
 				name := ""
 				pathCustom := ""
-				scene := config.Config().DefaultScene
+				scene := common.Config().DefaultScene
 				if v, ok := info.MetaData["filename"]; ok {
 					name = v
 				}
@@ -649,7 +648,7 @@ func (server *Server) initTus() {
 				md5sum := ""
 				oldFullPath := BIG_DIR + "/" + info.ID + ".bin"
 				infoFullPath := BIG_DIR + "/" + info.ID + ".info"
-				if md5sum, err = server.util.GetFileSumByName(oldFullPath, config.Config().FileSumArithmetic); err != nil {
+				if md5sum, err = server.util.GetFileSumByName(oldFullPath, common.Config().FileSumArithmetic); err != nil {
 					log.Error(err)
 					continue
 				}
@@ -658,7 +657,7 @@ func (server *Server) initTus() {
 				if name != "" {
 					filename = name
 				}
-				if config.Config().RenameFile {
+				if common.Config().RenameFile {
 					filename = md5sum + ext
 				}
 				timeStamp := time.Now().Unix()
@@ -666,7 +665,7 @@ func (server *Server) initTus() {
 				if pathCustom != "" {
 					fpath = "/" + strings.Replace(pathCustom, ".", "", -1) + "/"
 				}
-				newFullPath := STORE_DIR + "/" + scene + fpath + config.Config().PeerId + "/" + filename
+				newFullPath := STORE_DIR + "/" + scene + fpath + common.Config().PeerId + "/" + filename
 				if pathCustom != "" {
 					newFullPath = STORE_DIR + "/" + scene + fpath + filename
 				}
@@ -686,7 +685,7 @@ func (server *Server) initTus() {
 						continue
 					}
 				}
-				fpath = cont.STORE_DIR_NAME + "/" + config.Config().DefaultScene + fpath + config.Config().PeerId
+				fpath = cont.STORE_DIR_NAME + "/" + common.Config().DefaultScene + fpath + common.Config().PeerId
 				os.MkdirAll(DOCKER_DIR+fpath, 0775)
 				fileInfo := &common.FileInfo{
 					Name:      name,

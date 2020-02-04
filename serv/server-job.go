@@ -13,7 +13,6 @@ import (
 	"github.com/sjqzhang/googleAuthenticator"
 	log "github.com/sjqzhang/seelog"
 	"github.com/thinxz-yuan/go-fastdfs/common"
-	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"image"
 	"image/jpeg"
@@ -45,8 +44,8 @@ func (server *Server) Download(w http.ResponseWriter, r *http.Request) {
 	)
 	// redirect to upload
 	if r.RequestURI == "/" || r.RequestURI == "" ||
-		r.RequestURI == "/"+config.Config().Group ||
-		r.RequestURI == "/"+config.Config().Group+"/" {
+		r.RequestURI == "/"+common.Config().Group ||
+		r.RequestURI == "/"+common.Config().Group+"/" {
 		server.Index(w, r)
 		return
 	}
@@ -56,7 +55,7 @@ func (server *Server) Download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if config.Config().EnableCrossOrigin {
+	if common.Config().EnableCrossOrigin {
 		server.CrossOrigin(w, r)
 	}
 	fullpath, smallPath = server.getFilePathFromRequest(w, r)
@@ -65,7 +64,7 @@ func (server *Server) Download(w http.ResponseWriter, r *http.Request) {
 			server.downloadNotFound(w, r)
 			return
 		}
-		if !config.Config().ShowDir && fi.IsDir() {
+		if !common.Config().ShowDir && fi.IsDir() {
 			w.Write([]byte("list dir deny"))
 			return
 		}
@@ -105,19 +104,19 @@ func (server *Server) checkDownloadAuth(w http.ResponseWriter, r *http.Request) 
 		}
 		return true
 	}
-	if config.Config().EnableDownloadAuth && config.Config().AuthUrl != "" && !server.IsPeer(r) && !server.CheckAuth(w, r) {
+	if common.Config().EnableDownloadAuth && common.Config().AuthUrl != "" && !server.IsPeer(r) && !server.CheckAuth(w, r) {
 		return false, errors.New("auth fail")
 	}
-	if config.Config().DownloadUseToken && !server.IsPeer(r) {
+	if common.Config().DownloadUseToken && !server.IsPeer(r) {
 		token = r.FormValue("token")
 		timestamp = r.FormValue("timestamp")
 		if token == "" || timestamp == "" {
 			return false, errors.New("unvalid request")
 		}
 		maxTimestamp = time.Now().Add(time.Second *
-			time.Duration(config.Config().DownloadTokenExpire)).Unix()
+			time.Duration(common.Config().DownloadTokenExpire)).Unix()
 		minTimestamp = time.Now().Add(-time.Second *
-			time.Duration(config.Config().DownloadTokenExpire)).Unix()
+			time.Duration(common.Config().DownloadTokenExpire)).Unix()
 		if ts, err = strconv.ParseInt(timestamp, 10, 64); err != nil {
 			return false, errors.New("unvalid timestamp")
 		}
@@ -140,13 +139,13 @@ func (server *Server) checkDownloadAuth(w http.ResponseWriter, r *http.Request) 
 			return ok, nil
 		}
 	}
-	if config.Config().EnableGoogleAuth && !server.IsPeer(r) {
-		fullpath = r.RequestURI[len(config.Config().Group)+2 : len(r.RequestURI)]
+	if common.Config().EnableGoogleAuth && !server.IsPeer(r) {
+		fullpath = r.RequestURI[len(common.Config().Group)+2 : len(r.RequestURI)]
 		fullpath = strings.Split(fullpath, "?")[0] // just path
 		scene = strings.Split(fullpath, "/")[0]
 		code = r.FormValue("code")
 		if secret, ok = server.sceneMap.GetValue(scene); ok {
-			if !server.VerifyGoogleCode(secret.(string), code, int64(config.Config().DownloadTokenExpire/30)) {
+			if !server.VerifyGoogleCode(secret.(string), code, int64(common.Config().DownloadTokenExpire/30)) {
 				return false, errors.New("invalid google code")
 			}
 		}
@@ -167,7 +166,7 @@ func (server *Server) downloadSmallFileByURI(w http.ResponseWriter, r *http.Requ
 	r.ParseForm()
 	isDownload = true
 	if r.FormValue("download") == "" {
-		isDownload = config.Config().DefaultDownload
+		isDownload = common.Config().DefaultDownload
 	}
 	if r.FormValue("download") == "0" {
 		isDownload = false
@@ -295,7 +294,7 @@ func (server *Server) downloadNotFound(w http.ResponseWriter, r *http.Request) {
 	fullpath, smallPath = server.getFilePathFromRequest(w, r)
 	isDownload = true
 	if r.FormValue("download") == "" {
-		isDownload = config.Config().DefaultDownload
+		isDownload = common.Config().DefaultDownload
 	}
 	if r.FormValue("download") == "0" {
 		isDownload = false
@@ -305,7 +304,7 @@ func (server *Server) downloadNotFound(w http.ResponseWriter, r *http.Request) {
 	} else {
 		pathMd5 = server.util.MD5(fullpath)
 	}
-	for _, peer = range config.Config().Peers {
+	for _, peer = range common.Config().Peers {
 		if fileInfo, err = server.checkPeerFileExist(peer, pathMd5, fullpath); err != nil {
 			log.Error(err)
 			continue
@@ -353,7 +352,7 @@ func (server *Server) downloadNormalFileByURI(w http.ResponseWriter, r *http.Req
 	r.ParseForm()
 	isDownload = true
 	if r.FormValue("download") == "" {
-		isDownload = config.Config().DefaultDownload
+		isDownload = common.Config().DefaultDownload
 	}
 	if r.FormValue("download") == "0" {
 		isDownload = false
@@ -419,14 +418,14 @@ func (server *Server) getFilePathFromRequest(w http.ResponseWriter, r *http.Requ
 		prefix    string
 	)
 	fullpath = r.RequestURI[1:]
-	if strings.HasPrefix(r.RequestURI, "/"+config.Config().Group+"/") {
-		fullpath = r.RequestURI[len(config.Config().Group)+2 : len(r.RequestURI)]
+	if strings.HasPrefix(r.RequestURI, "/"+common.Config().Group+"/") {
+		fullpath = r.RequestURI[len(common.Config().Group)+2 : len(r.RequestURI)]
 	}
 	fullpath = strings.Split(fullpath, "?")[0] // just path
 	fullpath = DOCKER_DIR + cont.STORE_DIR_NAME + "/" + fullpath
 	prefix = "/" + LARGE_DIR_NAME + "/"
-	if config.Config().SupportGroupManage {
-		prefix = "/" + config.Config().Group + "/" + LARGE_DIR_NAME + "/"
+	if common.Config().SupportGroupManage {
+		prefix = "/" + common.Config().Group + "/" + LARGE_DIR_NAME + "/"
 	}
 	if strings.HasPrefix(r.RequestURI, prefix) {
 		smallPath = fullpath //notice order
@@ -447,10 +446,10 @@ func (server *Server) Index(w http.ResponseWriter, r *http.Request) {
 	)
 	uploadUrl = "/upload"
 	uploadBigUrl = cont.CONST_BIG_UPLOAD_PATH_SUFFIX
-	if config.Config().EnableWebUpload {
-		if config.Config().SupportGroupManage {
-			uploadUrl = fmt.Sprintf("/%s/upload", config.Config().Group)
-			uploadBigUrl = fmt.Sprintf("/%s%s", config.Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
+	if common.Config().EnableWebUpload {
+		if common.Config().SupportGroupManage {
+			uploadUrl = fmt.Sprintf("/%s/upload", common.Config().Group)
+			uploadBigUrl = fmt.Sprintf("/%s%s", common.Config().Group, cont.CONST_BIG_UPLOAD_PATH_SUFFIX)
 		}
 		uppy = `<html>
 			  
@@ -513,7 +512,7 @@ func (server *Server) Index(w http.ResponseWriter, r *http.Request) {
 			server.util.WriteFile(uppyFileName, uppy)
 		}
 		fmt.Fprintf(w,
-			fmt.Sprintf(uppy, uploadUrl, config.Config().DefaultScene, uploadBigUrl))
+			fmt.Sprintf(uppy, uploadUrl, common.Config().DefaultScene, uploadBigUrl))
 	} else {
 		w.Write([]byte("web upload deny"))
 	}
@@ -623,7 +622,7 @@ func (server *Server) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 					Name:      path.Base(fpath),
 					Size:      fi.Size(),
 					Md5:       sum,
-					Peers:     []string{config.Config().Host},
+					Peers:     []string{common.Config().Host},
 					OffSet:    -1, //very important
 					TimeStamp: fi.ModTime().Unix(),
 				}
@@ -700,16 +699,16 @@ func (server *Server) RemoveFile(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(server.GetClusterNotPermitMessage(r)))
 		return
 	}
-	if config.Config().AuthUrl != "" && !server.CheckAuth(w, r) {
+	if common.Config().AuthUrl != "" && !server.CheckAuth(w, r) {
 		server.NotPermit(w, r)
 		return
 	}
 	if fpath != "" && md5sum == "" {
-		fpath = strings.Replace(fpath, "/"+config.Config().Group+"/", cont.STORE_DIR_NAME+"/", 1)
+		fpath = strings.Replace(fpath, "/"+common.Config().Group+"/", cont.STORE_DIR_NAME+"/", 1)
 		md5sum = server.util.MD5(fpath)
 	}
 	if inner != "1" {
-		for _, peer := range config.Config().Peers {
+		for _, peer := range common.Config().Peers {
 			delFile := func(peer string, md5sum string, fileInfo *common.FileInfo) {
 				delUrl = fmt.Sprintf("%s%s", peer, server.getRequestURI("delete"))
 				req := httplib.Post(delUrl)
@@ -778,7 +777,7 @@ func (server *Server) GetFileInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	md5sum = r.FormValue("md5")
 	if fpath != "" {
-		fpath = strings.Replace(fpath, "/"+config.Config().Group+"/", cont.STORE_DIR_NAME+"/", 1)
+		fpath = strings.Replace(fpath, "/"+common.Config().Group+"/", cont.STORE_DIR_NAME+"/", 1)
 		md5sum = server.util.MD5(fpath)
 	}
 	if fileInfo, err = server.GetFileInfoFromLevelDB(md5sum); err != nil {
@@ -816,7 +815,7 @@ func (server *Server) Sync(w http.ResponseWriter, r *http.Request) {
 		isForceUpload = true
 	}
 	if inner != "1" {
-		for _, peer := range config.Config().Peers {
+		for _, peer := range common.Config().Peers {
 			req := httplib.Post(peer + server.getRequestURI("sync"))
 			req.Param("force", force)
 			req.Param("inner", "1")
@@ -919,13 +918,13 @@ func (server *Server) Status(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	sts["Fs.AutoRepair"] = config.Config().AutoRepair
+	sts["Fs.AutoRepair"] = common.Config().AutoRepair
 	sts["Fs.QueueUpload"] = len(server.queueUpload)
-	sts["Fs.RefreshInterval"] = config.Config().RefreshInterval
-	sts["Fs.Peers"] = config.Config().Peers
+	sts["Fs.RefreshInterval"] = common.Config().RefreshInterval
+	sts["Fs.Peers"] = common.Config().Peers
 	sts["Fs.Local"] = server.host
 	sts["Fs.FileStats"] = server.getStat()
-	sts["Fs.ShowDir"] = config.Config().ShowDir
+	sts["Fs.ShowDir"] = common.Config().ShowDir
 	sts["Sys.NumGoroutine"] = runtime.NumGoroutine()
 	sts["Sys.NumCpu"] = runtime.NumCPU()
 	sts["Sys.Alloc"] = memStat.Alloc
@@ -1028,7 +1027,7 @@ func (server *Server) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
 		date = server.util.GetToDay()
 	}
 	if inner != "1" {
-		for _, peer := range config.Config().Peers {
+		for _, peer := range common.Config().Peers {
 			req := httplib.Post(peer + server.getRequestURI("repair_stat"))
 			req.Param("inner", "1")
 			req.Param("date", date)
@@ -1085,8 +1084,8 @@ func (server *Server) Report(w http.ResponseWriter, r *http.Request) {
 				return
 			} else {
 				html = string(data)
-				if config.Config().SupportGroupManage {
-					html = strings.Replace(html, "{group}", "/"+config.Config().Group, 1)
+				if common.Config().SupportGroupManage {
+					html = strings.Replace(html, "{group}", "/"+common.Config().Group, 1)
 				} else {
 					html = strings.Replace(html, "{group}", "", 1)
 				}
@@ -1119,7 +1118,7 @@ func (server *Server) BackUp(w http.ResponseWriter, r *http.Request) {
 	}
 	if server.IsPeer(r) {
 		if inner != "1" {
-			for _, peer := range config.Config().Peers {
+			for _, peer := range common.Config().Peers {
 				backUp := func(peer string, date string) {
 					url = fmt.Sprintf("%s%s", peer, server.getRequestURI("backup"))
 					req := httplib.Post(url)
@@ -1261,7 +1260,7 @@ func (server *Server) RepairFileInfo(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(server.GetClusterNotPermitMessage(r)))
 		return
 	}
-	if !config.Config().EnableMigrate {
+	if !common.Config().EnableMigrate {
 		w.Write([]byte("please set enable_migrate=true"))
 		return
 	}
@@ -1301,7 +1300,7 @@ func (server *Server) SyncFileInfo(w http.ResponseWriter, r *http.Request) {
 		filename = fileInfo.ReName
 	}
 	p := strings.Replace(fileInfo.Path, STORE_DIR+"/", "", 1)
-	downloadUrl := fmt.Sprintf("http://%s/%s", r.Host, config.Config().Group+"/"+p+"/"+filename)
+	downloadUrl := fmt.Sprintf("http://%s/%s", r.Host, common.Config().Group+"/"+p+"/"+filename)
 	log.Info("SyncFileInfo: ", downloadUrl)
 	w.Write([]byte(downloadUrl))
 }

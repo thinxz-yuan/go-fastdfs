@@ -8,7 +8,6 @@ import (
 	log "github.com/sjqzhang/seelog"
 	"github.com/sjqzhang/tusd"
 	"github.com/thinxz-yuan/go-fastdfs/common"
-	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	_ "net/http/pprof"
 	"strings"
 	"time"
@@ -22,14 +21,14 @@ func (store HookDataStore) NewUpload(info tusd.FileInfo) (id string, err error) 
 	var (
 		jsonResult common.JsonResult
 	)
-	if config.Config().AuthUrl != "" {
+	if common.Config().AuthUrl != "" {
 		if auth_token, ok := info.MetaData["auth_token"]; !ok {
 			msg := "token auth fail,auth_token is not in http header Upload-Metadata," +
 				"in uppy uppy.setMeta({ auth_token: '9ee60e59-cb0f-4578-aaba-29b9fc2919ca' })"
 			log.Error(msg, fmt.Sprintf("current header:%v", info.MetaData))
 			return "", HttpError{error: errors.New(msg), statusCode: 401}
 		} else {
-			req := httplib.Post(config.Config().AuthUrl)
+			req := httplib.Post(common.Config().AuthUrl)
 			req.Param("auth_token", auth_token)
 			req.SetTimeout(time.Second*5, time.Second*10)
 			content, err := req.String()

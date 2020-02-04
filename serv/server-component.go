@@ -10,7 +10,6 @@ import (
 	log "github.com/sjqzhang/seelog"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/thinxz-yuan/go-fastdfs/common"
-	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"io/ioutil"
 	_ "net/http/pprof"
@@ -51,7 +50,7 @@ func (server *Server) checkFileAndSendToPeer(date string, filename string, isFor
 			if isForceUpload {
 				fileInfo.Peers = []string{}
 			}
-			if len(fileInfo.Peers) > len(config.Config().Peers) {
+			if len(fileInfo.Peers) > len(common.Config().Peers) {
 				continue
 			}
 			if !server.util.Contains(server.host, fileInfo.Peers) {
@@ -138,12 +137,12 @@ func (server *Server) checkClusterStatus() {
 			body    string
 			req     *httplib.BeegoHTTPRequest
 		)
-		for _, peer := range config.Config().Peers {
+		for _, peer := range common.Config().Peers {
 			req = httplib.Get(fmt.Sprintf("%s%s", peer, server.getRequestURI("status")))
 			req.SetTimeout(time.Second*5, time.Second*5)
 			err = req.ToJSON(&status)
 			if err != nil || status.Status != "ok" {
-				for _, to := range config.Config().AlarmReceivers {
+				for _, to := range common.Config().AlarmReceivers {
 					subject = "fastdfs server error"
 					if err != nil {
 						body = fmt.Sprintf("%s\nserver:%s\nerror:\n%s", subject, peer, err.Error())
@@ -154,8 +153,8 @@ func (server *Server) checkClusterStatus() {
 						log.Error(err)
 					}
 				}
-				if config.Config().AlarmUrl != "" {
-					req = httplib.Post(config.Config().AlarmUrl)
+				if common.Config().AlarmUrl != "" {
+					req = httplib.Post(common.Config().AlarmUrl)
 					req.SetTimeout(time.Second*10, time.Second*10)
 					req.Param("message", body)
 					req.Param("subject", subject)
@@ -174,9 +173,9 @@ func (server *Server) checkClusterStatus() {
 	}()
 }
 func (server *Server) sendToMail(to, subject, body, mailtype string) error {
-	host := config.Config().Mail.Host
-	user := config.Config().Mail.User
-	password := config.Config().Mail.Password
+	host := common.Config().Mail.Host
+	user := common.Config().Mail.User
+	password := common.Config().Mail.Password
 	hp := strings.Split(host, ":")
 	auth := smtp.PlainAuth("", user, password, hp[0])
 	var contentType string
@@ -238,7 +237,7 @@ func (server *Server) consumerPostToPeer() {
 			server.postFileToPeer(&fileInfo)
 		}
 	}
-	for i := 0; i < config.Config().SyncWorker; i++ {
+	for i := 0; i < common.Config().SyncWorker; i++ {
 		go ConsumerFunc()
 	}
 }
@@ -277,7 +276,7 @@ func (server *Server) consumerDownLoad() {
 			}
 		}
 	}
-	for i := 0; i < config.Config().SyncWorker; i++ {
+	for i := 0; i < common.Config().SyncWorker; i++ {
 		go ConsumerFunc()
 	}
 }
@@ -299,7 +298,7 @@ func (server *Server) consumerUpload() {
 			wr.Done <- true
 		}
 	}
-	for i := 0; i < config.Config().UploadWorker; i++ {
+	for i := 0; i < common.Config().UploadWorker; i++ {
 		go ConsumerFunc()
 	}
 }
@@ -583,7 +582,7 @@ func (server *Server) autoRepair(forceRepair bool) {
 			}
 			log.Info(fmt.Sprintf("syn file from %s date %s", peer, dateStat.Date))
 		}
-		for _, peer := range config.Config().Peers {
+		for _, peer := range common.Config().Peers {
 			req := httplib.Post(fmt.Sprintf("%s%s", peer, server.getRequestURI("stat")))
 			req.Param("inner", "1")
 			req.SetTimeout(time.Second*5, time.Second*15)

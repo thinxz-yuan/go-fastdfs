@@ -6,7 +6,7 @@ import (
 	_ "github.com/eventials/go-tus"
 	jsoniter "github.com/json-iterator/go"
 	log "github.com/sjqzhang/seelog"
-	"github.com/thinxz-yuan/go-fastdfs/serv/config"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
 	"net/http"
 	_ "net/http/pprof"
@@ -158,15 +158,15 @@ func init() {
 	}
 
 	//
-	config.ParseConfig(CONST_CONF_FILE_NAME)
-	if config.Config().QueueSize == 0 {
-		config.Config().QueueSize = CONST_QUEUE_SIZE
+	common.ParseConfig(CONST_CONF_FILE_NAME)
+	if common.Config().QueueSize == 0 {
+		common.Config().QueueSize = CONST_QUEUE_SIZE
 	}
-	if config.Config().PeerId == "" {
-		config.Config().PeerId = peerId
+	if common.Config().PeerId == "" {
+		common.Config().PeerId = peerId
 	}
-	if config.Config().SupportGroupManage {
-		staticHandler = http.StripPrefix("/"+config.Config().Group+"/", http.FileServer(http.Dir(STORE_DIR)))
+	if common.Config().SupportGroupManage {
+		staticHandler = http.StripPrefix("/"+common.Config().Group+"/", http.FileServer(http.Dir(STORE_DIR)))
 	} else {
 		staticHandler = http.StripPrefix("/", http.FileServer(http.Dir(STORE_DIR)))
 	}

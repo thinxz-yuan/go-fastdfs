@@ -4,8 +4,8 @@ import (
 	"fmt"
 	_ "github.com/eventials/go-tus"
 	log "github.com/sjqzhang/seelog"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv"
-	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"net/http"
 	_ "net/http/pprof"
 	"runtime/debug"
@@ -41,7 +41,7 @@ func (HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			log.Error(string(buff))
 		}
 	}()
-	if config.Config().EnableCrossOrigin {
+	if common.Config().EnableCrossOrigin {
 		s.CrossOrigin(res, req)
 	}
 	http.DefaultServeMux.ServeHTTP(res, req)
@@ -89,17 +89,17 @@ func StartHttpServe(server *serv.Server, groupRoute string) {
 	http.HandleFunc(fmt.Sprintf("%s/receive_md5s", groupRoute), server.ReceiveMd5s)
 	http.HandleFunc(fmt.Sprintf("%s/gen_google_secret", groupRoute), server.GenGoogleSecret)
 	http.HandleFunc(fmt.Sprintf("%s/gen_google_code", groupRoute), server.GenGoogleCode)
-	http.HandleFunc("/"+config.Config().Group+"/", server.Download)
+	http.HandleFunc("/"+common.Config().Group+"/", server.Download)
 
 	//
-	fmt.Println("Listen on " + config.Config().Addr)
+	fmt.Println("Listen on " + common.Config().Addr)
 	srv := &http.Server{
-		Addr:              config.Config().Addr,
+		Addr:              common.Config().Addr,
 		Handler:           new(HttpHandler),
-		ReadTimeout:       time.Duration(config.Config().ReadTimeout) * time.Second,
-		ReadHeaderTimeout: time.Duration(config.Config().ReadHeaderTimeout) * time.Second,
-		WriteTimeout:      time.Duration(config.Config().WriteTimeout) * time.Second,
-		IdleTimeout:       time.Duration(config.Config().IdleTimeout) * time.Second,
+		ReadTimeout:       time.Duration(common.Config().ReadTimeout) * time.Second,
+		ReadHeaderTimeout: time.Duration(common.Config().ReadHeaderTimeout) * time.Second,
+		WriteTimeout:      time.Duration(common.Config().WriteTimeout) * time.Second,
+		IdleTimeout:       time.Duration(common.Config().IdleTimeout) * time.Second,
 	}
 
 	// 开启HTTP服务, (阻塞主线程)
