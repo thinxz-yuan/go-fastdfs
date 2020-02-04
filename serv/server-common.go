@@ -10,9 +10,9 @@ import (
 	log "github.com/sjqzhang/seelog"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
-	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -39,7 +39,7 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 		keyPrefix    string
 		msg          string
 		name         string
-		fileInfo     ent.FileInfo
+		fileInfo     common.FileInfo
 		logFileName  string
 		fileLog      *os.File
 		fileMeta     *os.File
@@ -108,7 +108,7 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 	}
 }
 
-func (server *Server) SaveFileInfoToLevelDB(key string, fileInfo *ent.FileInfo, db *leveldb.DB) (*ent.FileInfo, error) {
+func (server *Server) SaveFileInfoToLevelDB(key string, fileInfo *common.FileInfo, db *leveldb.DB) (*common.FileInfo, error) {
 	var (
 		err  error
 		data []byte
@@ -129,7 +129,7 @@ func (server *Server) SaveFileInfoToLevelDB(key string, fileInfo *ent.FileInfo, 
 	}
 	return fileInfo, nil
 }
-func (server *Server) DownloadFromPeer(peer string, fileInfo *ent.FileInfo) {
+func (server *Server) DownloadFromPeer(peer string, fileInfo *common.FileInfo) {
 	var (
 		err         error
 		filename    string
@@ -273,24 +273,24 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *ent.FileInfo) {
 		server.SaveFileMd5Log(fileInfo, cont.CONST_FILE_Md5_FILE_NAME)
 	}
 }
-func (server *Server) SaveFileMd5Log(fileInfo *ent.FileInfo, filename string) {
+func (server *Server) SaveFileMd5Log(fileInfo *common.FileInfo, filename string) {
 	var (
-		info ent.FileInfo
+		info common.FileInfo
 	)
 	for len(server.queueFileLog)+len(server.queueFileLog)/10 > CONST_QUEUE_SIZE {
 		time.Sleep(time.Second * 1)
 	}
 	info = *fileInfo
-	server.queueFileLog <- &ent.FileLog{FileInfo: &info, FileName: filename}
+	server.queueFileLog <- &common.FileLog{FileInfo: &info, FileName: filename}
 }
-func (server *Server) AppendToQueue(fileInfo *ent.FileInfo) {
+func (server *Server) AppendToQueue(fileInfo *common.FileInfo) {
 
 	for (len(server.queueToPeers) + CONST_QUEUE_SIZE/10) > CONST_QUEUE_SIZE {
 		time.Sleep(time.Millisecond * 50)
 	}
 	server.queueToPeers <- *fileInfo
 }
-func (server *Server) AppendToDownloadQueue(fileInfo *ent.FileInfo) {
+func (server *Server) AppendToDownloadQueue(fileInfo *common.FileInfo) {
 	for (len(server.queueFromPeers) + CONST_QUEUE_SIZE/10) > CONST_QUEUE_SIZE {
 		time.Sleep(time.Millisecond * 50)
 	}
@@ -308,12 +308,12 @@ func (server *Server) getRequestURI(action string) string {
 	return uri
 }
 
-func (server *Server) postFileToPeer(fileInfo *ent.FileInfo) {
+func (server *Server) postFileToPeer(fileInfo *common.FileInfo) {
 	var (
 		err      error
 		peer     string
 		filename string
-		info     *ent.FileInfo
+		info     *common.FileInfo
 		postURL  string
 		result   string
 		fi       os.FileInfo
@@ -402,7 +402,7 @@ func (server *Server) postFileToPeer(fileInfo *ent.FileInfo) {
 		}
 	}
 }
-func (server *Server) saveFileMd5Log(fileInfo *ent.FileInfo, filename string) {
+func (server *Server) saveFileMd5Log(fileInfo *common.FileInfo, filename string) {
 	var (
 		err      error
 		outname  string
@@ -471,10 +471,10 @@ func (server *Server) saveFileMd5Log(fileInfo *ent.FileInfo, filename string) {
 	}
 	server.SaveFileInfoToLevelDB(logKey, fileInfo, server.logDB)
 }
-func (server *Server) BuildFileResult(fileInfo *ent.FileInfo, r *http.Request) ent.FileResult {
+func (server *Server) BuildFileResult(fileInfo *common.FileInfo, r *http.Request) common.FileResult {
 	var (
 		outname     string
-		fileResult  ent.FileResult
+		fileResult  common.FileResult
 		p           string
 		downloadUrl string
 		domain      string
@@ -522,7 +522,7 @@ func (server *Server) BuildFileResult(fileInfo *ent.FileInfo, r *http.Request) e
 	fileResult.Scenes = fileInfo.Scene
 	return fileResult
 }
-func (server *Server) GetFilePathByInfo(fileInfo *ent.FileInfo, withDocker bool) string {
+func (server *Server) GetFilePathByInfo(fileInfo *common.FileInfo, withDocker bool) string {
 	var (
 		fn string
 	)
@@ -536,17 +536,17 @@ func (server *Server) GetFilePathByInfo(fileInfo *ent.FileInfo, withDocker bool)
 	return fileInfo.Path + "/" + fn
 }
 
-func (server *Server) checkPeerFileExist(peer string, md5sum string, fpath string) (*ent.FileInfo, error) {
+func (server *Server) checkPeerFileExist(peer string, md5sum string, fpath string) (*common.FileInfo, error) {
 	var (
 		err      error
-		fileInfo ent.FileInfo
+		fileInfo common.FileInfo
 	)
 	req := httplib.Post(fmt.Sprintf("%s%s?md5=%s", peer, server.getRequestURI("check_file_exist"), md5sum))
 	req.Param("path", fpath)
 	req.Param("md5", md5sum)
 	req.SetTimeout(time.Second*5, time.Second*10)
 	if err = req.ToJSON(&fileInfo); err != nil {
-		return &ent.FileInfo{}, err
+		return &common.FileInfo{}, err
 	}
 	if fileInfo.Md5 == "" {
 		return &fileInfo, errors.New("not found")
@@ -587,7 +587,7 @@ func (server *Server) CheckAuth(w http.ResponseWriter, r *http.Request) bool {
 		err        error
 		req        *httplib.BeegoHTTPRequest
 		result     string
-		jsonResult ent.JsonResult
+		jsonResult common.JsonResult
 	)
 	if err = r.ParseForm(); err != nil {
 		log.Error(err)
@@ -642,12 +642,12 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		//		pathname     string
 		md5sum       string
 		fileName     string
-		fileInfo     ent.FileInfo
+		fileInfo     common.FileInfo
 		uploadFile   multipart.File
 		uploadHeader *multipart.FileHeader
 		scene        string
 		output       string
-		fileResult   ent.FileResult
+		fileResult   common.FileResult
 		data         []byte
 		code         string
 		secret       interface{}
@@ -806,7 +806,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-func (server *Server) saveUploadFile(file multipart.File, header *multipart.FileHeader, fileInfo *ent.FileInfo, r *http.Request) (*ent.FileInfo, error) {
+func (server *Server) saveUploadFile(file multipart.File, header *multipart.FileHeader, fileInfo *common.FileInfo, r *http.Request) (*common.FileInfo, error) {
 	var (
 		err     error
 		outFile *os.File
@@ -904,7 +904,7 @@ func (server *Server) checkScene(scene string) (bool, error) {
 	}
 	return true, nil
 }
-func (server *Server) saveSmallFile(fileInfo *ent.FileInfo) error {
+func (server *Server) saveSmallFile(fileInfo *common.FileInfo) error {
 	var (
 		err      error
 		filename string

@@ -12,9 +12,9 @@ import (
 	"github.com/shirou/gopsutil/mem"
 	"github.com/sjqzhang/googleAuthenticator"
 	log "github.com/sjqzhang/seelog"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
-	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -93,7 +93,7 @@ func (server *Server) checkDownloadAuth(w http.ResponseWriter, r *http.Request) 
 		fullpath     string
 		smallPath    string
 		pathMd5      string
-		fileInfo     *ent.FileInfo
+		fileInfo     *common.FileInfo
 		scene        string
 		secret       interface{}
 		code         string
@@ -290,7 +290,7 @@ func (server *Server) downloadNotFound(w http.ResponseWriter, r *http.Request) {
 		isDownload bool
 		pathMd5    string
 		peer       string
-		fileInfo   *ent.FileInfo
+		fileInfo   *common.FileInfo
 	)
 	fullpath, smallPath = server.getFilePathFromRequest(w, r)
 	isDownload = true
@@ -524,10 +524,10 @@ func (server *Server) CheckFilesExist(w http.ResponseWriter, r *http.Request) {
 	var (
 		data      []byte
 		err       error
-		fileInfo  *ent.FileInfo
-		fileInfos []*ent.FileInfo
+		fileInfo  *common.FileInfo
+		fileInfos []*common.FileInfo
 		fpath     string
-		result    ent.JsonResult
+		result    common.JsonResult
 	)
 	r.ParseForm()
 	md5sum := ""
@@ -575,7 +575,7 @@ func (server *Server) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 	var (
 		data     []byte
 		err      error
-		fileInfo *ent.FileInfo
+		fileInfo *common.FileInfo
 		fpath    string
 		fi       os.FileInfo
 	)
@@ -618,7 +618,7 @@ func (server *Server) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 				//		log.Error(err)
 				//	}
 				//}
-				fileInfo = &ent.FileInfo{
+				fileInfo = &common.FileInfo{
 					Path:      path.Dir(fpath),
 					Name:      path.Base(fpath),
 					Size:      fi.Size(),
@@ -633,7 +633,7 @@ func (server *Server) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	data, _ = json.Marshal(ent.FileInfo{})
+	data, _ = json.Marshal(common.FileInfo{})
 	w.Write(data)
 	return
 }
@@ -672,7 +672,7 @@ func (server *Server) Upload(w http.ResponseWriter, r *http.Request) {
 	fpBody, err = os.Open(fn)
 	r.Body = fpBody
 	done := make(chan bool, 1)
-	server.queueUpload <- ent.WrapReqResp{&w, r, done}
+	server.queueUpload <- common.WrapReqResp{&w, r, done}
 	<-done
 
 }
@@ -682,10 +682,10 @@ func (server *Server) RemoveFile(w http.ResponseWriter, r *http.Request) {
 	var (
 		err      error
 		md5sum   string
-		fileInfo *ent.FileInfo
+		fileInfo *common.FileInfo
 		fpath    string
 		delUrl   string
-		result   ent.JsonResult
+		result   common.JsonResult
 		inner    string
 		name     string
 	)
@@ -710,7 +710,7 @@ func (server *Server) RemoveFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if inner != "1" {
 		for _, peer := range config.Config().Peers {
-			delFile := func(peer string, md5sum string, fileInfo *ent.FileInfo) {
+			delFile := func(peer string, md5sum string, fileInfo *common.FileInfo) {
 				delUrl = fmt.Sprintf("%s%s", peer, server.getRequestURI("delete"))
 				req := httplib.Post(delUrl)
 				req.Param("md5", md5sum)
@@ -765,9 +765,9 @@ func (server *Server) GetFileInfo(w http.ResponseWriter, r *http.Request) {
 	var (
 		fpath    string
 		md5sum   string
-		fileInfo *ent.FileInfo
+		fileInfo *common.FileInfo
 		err      error
-		result   ent.JsonResult
+		result   common.JsonResult
 	)
 	md5sum = r.FormValue("md5")
 	fpath = r.FormValue("path")
@@ -796,7 +796,7 @@ func (server *Server) GetFileInfo(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) Sync(w http.ResponseWriter, r *http.Request) {
 	var (
-		result ent.JsonResult
+		result common.JsonResult
 	)
 	r.ParseForm()
 	result.Status = "fail"
@@ -845,7 +845,7 @@ func (server *Server) Sync(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) Stat(w http.ResponseWriter, r *http.Request) {
 	var (
-		result   ent.JsonResult
+		result   common.JsonResult
 		inner    string
 		echart   string
 		category []string
@@ -886,7 +886,7 @@ func (server *Server) Stat(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) Status(w http.ResponseWriter, r *http.Request) {
 	var (
-		status   ent.JsonResult
+		status   common.JsonResult
 		sts      map[string]interface{}
 		today    string
 		sumset   mapset.Set
@@ -955,14 +955,14 @@ func (server *Server) Status(w http.ResponseWriter, r *http.Request) {
 	status.Data = sts
 	w.Write([]byte(server.util.JsonEncodePretty(status)))
 }
-func (server *Server) getStat() []ent.StatDateFileInfo {
+func (server *Server) getStat() []common.StatDateFileInfo {
 	var (
 		min   int64
 		max   int64
 		err   error
 		i     int64
-		rows  []ent.StatDateFileInfo
-		total ent.StatDateFileInfo
+		rows  []common.StatDateFileInfo
+		total common.StatDateFileInfo
 	)
 	min = 20190101
 	max = 20190101
@@ -983,7 +983,7 @@ func (server *Server) getStat() []ent.StatDateFileInfo {
 	for i := min; i <= max; i++ {
 		s := fmt.Sprintf("%d", i)
 		if v, ok := server.statMap.GetValue(s + "_" + cont.CONST_STAT_FILE_TOTAL_SIZE_KEY); ok {
-			var info ent.StatDateFileInfo
+			var info common.StatDateFileInfo
 			info.Date = s
 			switch v.(type) {
 			case int64:
@@ -1008,7 +1008,7 @@ func (server *Server) getStat() []ent.StatDateFileInfo {
 //
 func (server *Server) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
 	var (
-		result ent.JsonResult
+		result common.JsonResult
 		date   string
 		inner  string
 	)
@@ -1047,7 +1047,7 @@ func (server *Server) Repair(w http.ResponseWriter, r *http.Request) {
 	var (
 		force       string
 		forceRepair bool
-		result      ent.JsonResult
+		result      common.JsonResult
 	)
 	result.Status = "ok"
 	r.ParseForm()
@@ -1070,7 +1070,7 @@ func (server *Server) Repair(w http.ResponseWriter, r *http.Request) {
 func (server *Server) Report(w http.ResponseWriter, r *http.Request) {
 	var (
 		reportFileName string
-		result         ent.JsonResult
+		result         common.JsonResult
 		html           string
 	)
 	result.Status = "ok"
@@ -1106,7 +1106,7 @@ func (server *Server) BackUp(w http.ResponseWriter, r *http.Request) {
 	var (
 		err    error
 		date   string
-		result ent.JsonResult
+		result common.JsonResult
 		inner  string
 		url    string
 	)
@@ -1145,11 +1145,11 @@ func (server *Server) BackUp(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) Search(w http.ResponseWriter, r *http.Request) {
 	var (
-		result    ent.JsonResult
+		result    common.JsonResult
 		err       error
 		kw        string
 		count     int
-		fileInfos []ent.FileInfo
+		fileInfos []common.FileInfo
 		md5s      []string
 	)
 	kw = r.FormValue("kw")
@@ -1160,7 +1160,7 @@ func (server *Server) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	iter := server.ldb.NewIterator(nil, nil)
 	for iter.Next() {
-		var fileInfo ent.FileInfo
+		var fileInfo common.FileInfo
 		value := iter.Value()
 		if err = json.Unmarshal(value, &fileInfo); err != nil {
 			log.Error(err)
@@ -1189,11 +1189,11 @@ func (server *Server) Search(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) ListDir(w http.ResponseWriter, r *http.Request) {
 	var (
-		result      ent.JsonResult
+		result      common.JsonResult
 		dir         string
 		filesInfo   []os.FileInfo
 		err         error
-		filesResult []ent.FileInfoResult
+		filesResult []common.FileInfoResult
 		tmpDir      string
 	)
 	if !server.IsPeer(r) {
@@ -1219,7 +1219,7 @@ func (server *Server) ListDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, f := range filesInfo {
-		fi := ent.FileInfoResult{
+		fi := common.FileInfoResult{
 			Name:    f.Name(),
 			Size:    f.Size(),
 			IsDir:   f.IsDir(),
@@ -1238,7 +1238,7 @@ func (server *Server) ListDir(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) RemoveEmptyDir(w http.ResponseWriter, r *http.Request) {
 	var (
-		result ent.JsonResult
+		result common.JsonResult
 	)
 	result.Status = "ok"
 	if server.IsPeer(r) {
@@ -1255,7 +1255,7 @@ func (server *Server) RemoveEmptyDir(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) RepairFileInfo(w http.ResponseWriter, r *http.Request) {
 	var (
-		result ent.JsonResult
+		result common.JsonResult
 	)
 	if !server.IsPeer(r) {
 		w.Write([]byte(server.GetClusterNotPermitMessage(r)))
@@ -1275,7 +1275,7 @@ func (server *Server) RepairFileInfo(w http.ResponseWriter, r *http.Request) {
 func (server *Server) SyncFileInfo(w http.ResponseWriter, r *http.Request) {
 	var (
 		err         error
-		fileInfo    ent.FileInfo
+		fileInfo    common.FileInfo
 		fileInfoStr string
 		filename    string
 	)
@@ -1338,7 +1338,7 @@ func (server *Server) ReceiveMd5s(w http.ResponseWriter, r *http.Request) {
 	var (
 		err      error
 		md5str   string
-		fileInfo *ent.FileInfo
+		fileInfo *common.FileInfo
 		md5s     []string
 	)
 	if !server.IsPeer(r) {
@@ -1366,7 +1366,7 @@ func (server *Server) ReceiveMd5s(w http.ResponseWriter, r *http.Request) {
 //
 func (server *Server) GenGoogleSecret(w http.ResponseWriter, r *http.Request) {
 	var (
-		result ent.JsonResult
+		result common.JsonResult
 	)
 	result.Status = "ok"
 	result.Message = "ok"
@@ -1391,7 +1391,7 @@ func (server *Server) GenGoogleSecret(w http.ResponseWriter, r *http.Request) {
 func (server *Server) GenGoogleCode(w http.ResponseWriter, r *http.Request) {
 	var (
 		err    error
-		result ent.JsonResult
+		result common.JsonResult
 		secret string
 		goauth *googleAuthenticator.GAuth
 	)

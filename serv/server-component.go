@@ -9,9 +9,9 @@ import (
 	"github.com/radovskyb/watcher"
 	log "github.com/sjqzhang/seelog"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
-	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io/ioutil"
 	_ "net/http/pprof"
 	"net/smtp"
@@ -132,7 +132,7 @@ func (server *Server) checkClusterStatus() {
 			}
 		}()
 		var (
-			status  ent.JsonResult
+			status  common.JsonResult
 			err     error
 			subject string
 			body    string
@@ -197,7 +197,7 @@ func (server *Server) loadQueueSendToPeer() {
 	} else {
 		for fileInfo := range queue.Iter() {
 			//server.queueFromPeers <- *fileInfo.(*FileInfo)
-			server.AppendToDownloadQueue(fileInfo.(*ent.FileInfo))
+			server.AppendToDownloadQueue(fileInfo.(*common.FileInfo))
 		}
 	}
 }
@@ -220,7 +220,7 @@ func (server *Server) loadFileInfoByDate(date string, filename string) (mapset.S
 	keyPrefix = fmt.Sprintf(keyPrefix, date, filename)
 	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	for iter.Next() {
-		var fileInfo ent.FileInfo
+		var fileInfo common.FileInfo
 		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
 			continue
 		}
@@ -247,7 +247,7 @@ func (server *Server) consumerPostToPeer() {
 func (server *Server) consumerLog() {
 	go func() {
 		var (
-			fileLog *ent.FileLog
+			fileLog *common.FileLog
 		)
 		for {
 			fileLog = <-server.queueFileLog
@@ -329,13 +329,13 @@ func (server *Server) removeDownloading() {
 func (server *Server) watchFilesChange() {
 	var (
 		w        *watcher.Watcher
-		fileInfo ent.FileInfo
+		fileInfo common.FileInfo
 		curDir   string
 		err      error
-		qchan    chan *ent.FileInfo
+		qchan    chan *common.FileInfo
 		isLink   bool
 	)
-	qchan = make(chan *ent.FileInfo, 10000)
+	qchan = make(chan *common.FileInfo, 10000)
 	w = watcher.New()
 	w.FilterOps(watcher.Create)
 	//w.FilterOps(watcher.Create, watcher.Remove)
@@ -357,7 +357,7 @@ func (server *Server) watchFilesChange() {
 				}
 				fpath = strings.Replace(fpath, string(os.PathSeparator), "/", -1)
 				sum := server.util.MD5(fpath)
-				fileInfo = ent.FileInfo{
+				fileInfo = common.FileInfo{
 					Size:      event.Size(),
 					Name:      event.Name(),
 					Path:      strings.TrimSuffix(fpath, "/"+event.Name()), // files/default/20190927/xxx
@@ -471,7 +471,7 @@ func (server *Server) repairFileInfoFromFile() {
 		var (
 			files    []os.FileInfo
 			fi       os.FileInfo
-			fileInfo ent.FileInfo
+			fileInfo common.FileInfo
 			sum      string
 			pathMd5  string
 		)
@@ -507,7 +507,7 @@ func (server *Server) repairFileInfoFromFile() {
 					log.Error(err)
 					continue
 				}
-				fileInfo = ent.FileInfo{
+				fileInfo = common.FileInfo{
 					Size:      fi.Size(),
 					Name:      fi.Name(),
 					Path:      file_path,
@@ -556,7 +556,7 @@ func (server *Server) autoRepair(forceRepair bool) {
 	defer server.lockMap.UnLockKey("AutoRepair")
 	AutoRepairFunc := func(forceRepair bool) {
 		var (
-			dateStats []ent.StatDateFileInfo
+			dateStats []common.StatDateFileInfo
 			err       error
 			countKey  string
 			md5s      string
@@ -564,7 +564,7 @@ func (server *Server) autoRepair(forceRepair bool) {
 			remoteSet mapset.Set
 			allSet    mapset.Set
 			tmpSet    mapset.Set
-			fileInfo  *ent.FileInfo
+			fileInfo  *common.FileInfo
 		)
 		defer func() {
 			if re := recover(); re != nil {
@@ -574,7 +574,7 @@ func (server *Server) autoRepair(forceRepair bool) {
 				log.Error(string(buffer))
 			}
 		}()
-		Update := func(peer string, dateStat ent.StatDateFileInfo) {
+		Update := func(peer string, dateStat common.StatDateFileInfo) {
 			//从远端拉数据过来
 			req := httplib.Get(fmt.Sprintf("%s%s?date=%s&force=%s", peer, server.getRequestURI("sync"), dateStat.Date, "1"))
 			req.SetTimeout(time.Second*5, time.Second*5)

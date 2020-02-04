@@ -1,4 +1,4 @@
-package ent
+package common
 
 import "net/http"
 

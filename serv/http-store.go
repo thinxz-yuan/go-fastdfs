@@ -7,8 +7,8 @@ import (
 	_ "github.com/eventials/go-tus"
 	log "github.com/sjqzhang/seelog"
 	"github.com/sjqzhang/tusd"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/config"
-	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	_ "net/http/pprof"
 	"strings"
 	"time"
@@ -20,7 +20,7 @@ type HookDataStore struct {
 
 func (store HookDataStore) NewUpload(info tusd.FileInfo) (id string, err error) {
 	var (
-		jsonResult ent.JsonResult
+		jsonResult common.JsonResult
 	)
 	if config.Config().AuthUrl != "" {
 		if auth_token, ok := info.MetaData["auth_token"]; !ok {

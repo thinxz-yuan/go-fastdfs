@@ -7,8 +7,8 @@ import (
 	"github.com/sjqzhang/goutil"
 	log "github.com/sjqzhang/seelog"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
-	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
@@ -85,7 +85,7 @@ func (server *Server) BenchMark(w http.ResponseWriter, r *http.Request) {
 	t := time.Now()
 	batch := new(leveldb.Batch)
 	for i := 0; i < 100000000; i++ {
-		f := ent.FileInfo{}
+		f := common.FileInfo{}
 		f.Peers = []string{"http://192.168.0.1", "http://192.168.2.5"}
 		f.Path = "20190201/19/02"
 		s := strconv.Itoa(i)
@@ -145,10 +145,10 @@ func (server *Server) SaveSearchDict() {
 }
 
 // Notice: performance is poor,just for low capacity,but low memory , if you want to high performance,use searchMap for search,but memory ....
-func (server *Server) SearchDict(kw string) []ent.FileInfo {
+func (server *Server) SearchDict(kw string) []common.FileInfo {
 	var (
-		fileInfos []ent.FileInfo
-		fileInfo  *ent.FileInfo
+		fileInfos []common.FileInfo
+		fileInfo  *common.FileInfo
 	)
 	for dict := range server.searchMap.Iter() {
 		if strings.Contains(dict.Val.(string), kw) {

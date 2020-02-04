@@ -13,9 +13,9 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/config"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
-	"github.com/thinxz-yuan/go-fastdfs/serv/ent"
 	"io"
 	"io/ioutil"
 	slog "log"
@@ -38,10 +38,10 @@ type Server struct {
 	statMap        *goutil.CommonMap
 	sumMap         *goutil.CommonMap
 	rtMap          *goutil.CommonMap
-	queueToPeers   chan ent.FileInfo
-	queueFromPeers chan ent.FileInfo
-	queueFileLog   chan *ent.FileLog
-	queueUpload    chan ent.WrapReqResp
+	queueToPeers   chan common.FileInfo
+	queueFromPeers chan common.FileInfo
+	queueFileLog   chan *common.FileLog
+	queueUpload    chan common.WrapReqResp
 	lockMap        *goutil.CommonMap
 	sceneMap       *goutil.CommonMap
 	searchMap      *goutil.CommonMap
@@ -58,10 +58,10 @@ func NewServer() (server *Server, err error) {
 		rtMap:          goutil.NewCommonMap(0),
 		sceneMap:       goutil.NewCommonMap(0),
 		searchMap:      goutil.NewCommonMap(0),
-		queueToPeers:   make(chan ent.FileInfo, CONST_QUEUE_SIZE),
-		queueFromPeers: make(chan ent.FileInfo, CONST_QUEUE_SIZE),
-		queueFileLog:   make(chan *ent.FileLog, CONST_QUEUE_SIZE),
-		queueUpload:    make(chan ent.WrapReqResp, 100),
+		queueToPeers:   make(chan common.FileInfo, CONST_QUEUE_SIZE),
+		queueFromPeers: make(chan common.FileInfo, CONST_QUEUE_SIZE),
+		queueFileLog:   make(chan *common.FileLog, CONST_QUEUE_SIZE),
+		queueUpload:    make(chan common.WrapReqResp, 100),
 		sumMap:         goutil.NewCommonMap(365 * 3),
 	}
 
@@ -110,12 +110,12 @@ func NewServer() (server *Server, err error) {
 	return server, nil
 }
 
-func (server *Server) CheckFileExistByInfo(md5s string, fileInfo *ent.FileInfo) bool {
+func (server *Server) CheckFileExistByInfo(md5s string, fileInfo *common.FileInfo) bool {
 	var (
 		err      error
 		fullpath string
 		fi       os.FileInfo
-		info     *ent.FileInfo
+		info     *common.FileInfo
 	)
 	if fileInfo == nil {
 		return false
@@ -148,11 +148,11 @@ func (server *Server) CrossOrigin(w http.ResponseWriter, r *http.Request) {
 func (server *Server) IsExistFromLevelDB(key string, db *leveldb.DB) (bool, error) {
 	return db.Has([]byte(key), nil)
 }
-func (server *Server) GetFileInfoFromLevelDB(key string) (*ent.FileInfo, error) {
+func (server *Server) GetFileInfoFromLevelDB(key string) (*common.FileInfo, error) {
 	var (
 		err      error
 		data     []byte
-		fileInfo ent.FileInfo
+		fileInfo common.FileInfo
 	)
 	if data, err = server.ldb.Get([]byte(key), nil); err != nil {
 		return nil, err
@@ -391,7 +391,7 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 	var (
 		data   []byte
 		cfg    config.GlobalConfig
-		result ent.JsonResult
+		result common.JsonResult
 	)
 	result.Status = "fail"
 	err := r.ParseForm()
@@ -487,7 +487,7 @@ func (server *Server) formatStatInfo() {
 	}
 }
 
-func (server *Server) repairStatByDate(date string) ent.StatDateFileInfo {
+func (server *Server) repairStatByDate(date string) common.StatDateFileInfo {
 	defer func() {
 		if re := recover(); re != nil {
 			buffer := debug.Stack()
@@ -499,10 +499,10 @@ func (server *Server) repairStatByDate(date string) ent.StatDateFileInfo {
 	var (
 		err       error
 		keyPrefix string
-		fileInfo  ent.FileInfo
+		fileInfo  common.FileInfo
 		fileCount int64
 		fileSize  int64
-		stat      ent.StatDateFileInfo
+		stat      common.StatDateFileInfo
 	)
 	keyPrefix = "%s_%s_"
 	keyPrefix = fmt.Sprintf(keyPrefix, date, cont.CONST_FILE_Md5_FILE_NAME)
@@ -570,7 +570,7 @@ func (server *Server) initTus() {
 			err    error
 			length int
 			buffer []byte
-			fi     *ent.FileInfo
+			fi     *common.FileInfo
 			fn     string
 		)
 		if fi, err = server.GetFileInfoFromLevelDB(id); err != nil {
@@ -688,7 +688,7 @@ func (server *Server) initTus() {
 				}
 				fpath = cont.STORE_DIR_NAME + "/" + config.Config().DefaultScene + fpath + config.Config().PeerId
 				os.MkdirAll(DOCKER_DIR+fpath, 0775)
-				fileInfo := &ent.FileInfo{
+				fileInfo := &common.FileInfo{
 					Name:      name,
 					Path:      fpath,
 					ReName:    filename,
@@ -710,7 +710,7 @@ func (server *Server) initTus() {
 				}
 				server.SaveFileMd5Log(fileInfo, cont.CONST_FILE_Md5_FILE_NAME)
 				go server.postFileToPeer(fileInfo)
-				callBack := func(info tusd.FileInfo, fileInfo *ent.FileInfo) {
+				callBack := func(info tusd.FileInfo, fileInfo *common.FileInfo) {
 					if callback_url, ok := info.MetaData["callback_url"]; ok {
 						req := httplib.Post(callback_url)
 						req.SetTimeout(time.Second*10, time.Second*10)
