@@ -535,7 +535,7 @@ func (hs *HttpServer) CheckFilesExist(w http.ResponseWriter, r *http.Request) {
 	for _, m := range md5s {
 		if fileInfo, err = hs.server.GetFileInfoFromLevelDB(m); fileInfo != nil {
 			if fileInfo.OffSet != -1 {
-				if data, err = json.Marshal(fileInfo); err != nil {
+				if data, err = common.JSON.Marshal(fileInfo); err != nil {
 					log.Error(err)
 				}
 				//w.Write(data)
@@ -548,7 +548,7 @@ func (hs *HttpServer) CheckFilesExist(w http.ResponseWriter, r *http.Request) {
 				fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
 			}
 			if hs.util.IsExist(fpath) {
-				if data, err = json.Marshal(fileInfo); err == nil {
+				if data, err = common.JSON.Marshal(fileInfo); err == nil {
 					fileInfos = append(fileInfos, fileInfo)
 					//w.Write(data)
 					//return
@@ -564,7 +564,7 @@ func (hs *HttpServer) CheckFilesExist(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	result.Data = fileInfos
-	data, _ = json.Marshal(result)
+	data, _ = common.JSON.Marshal(result)
 	w.Write(data)
 	return
 }
@@ -584,7 +584,7 @@ func (hs *HttpServer) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 	fpath = r.FormValue("path")
 	if fileInfo, err = hs.server.GetFileInfoFromLevelDB(md5sum); fileInfo != nil {
 		if fileInfo.OffSet != -1 {
-			if data, err = json.Marshal(fileInfo); err != nil {
+			if data, err = common.JSON.Marshal(fileInfo); err != nil {
 				log.Error(err)
 			}
 			w.Write(data)
@@ -595,7 +595,7 @@ func (hs *HttpServer) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 			fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
 		}
 		if hs.util.IsExist(fpath) {
-			if data, err = json.Marshal(fileInfo); err == nil {
+			if data, err = common.JSON.Marshal(fileInfo); err == nil {
 				w.Write(data)
 				return
 			} else {
@@ -626,13 +626,13 @@ func (hs *HttpServer) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 					OffSet:    -1, //very important
 					TimeStamp: fi.ModTime().Unix(),
 				}
-				data, err = json.Marshal(fileInfo)
+				data, err = common.JSON.Marshal(fileInfo)
 				w.Write(data)
 				return
 			}
 		}
 	}
-	data, _ = json.Marshal(common.FileInfo{})
+	data, _ = common.JSON.Marshal(common.FileInfo{})
 	w.Write(data)
 	return
 }
@@ -1161,7 +1161,7 @@ func (hs *HttpServer) Search(w http.ResponseWriter, r *http.Request) {
 	for iter.Next() {
 		var fileInfo common.FileInfo
 		value := iter.Value()
-		if err = json.Unmarshal(value, &fileInfo); err != nil {
+		if err = common.JSON.Unmarshal(value, &fileInfo); err != nil {
 			log.Error(err)
 			continue
 		}
@@ -1283,7 +1283,7 @@ func (hs *HttpServer) SyncFileInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fileInfoStr = r.FormValue("fileInfo")
-	if err = json.Unmarshal([]byte(fileInfoStr), &fileInfo); err != nil {
+	if err = common.JSON.Unmarshal([]byte(fileInfoStr), &fileInfo); err != nil {
 		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
 		log.Error(err)
 		return

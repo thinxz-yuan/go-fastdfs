@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	_ "github.com/eventials/go-tus"
-	jsoniter "github.com/json-iterator/go"
 	log "github.com/sjqzhang/seelog"
 	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
@@ -22,8 +21,6 @@ var (
 	v = flag.Bool("v", false, "display version")
 	//
 	staticHandler http.Handler
-	//
-	json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 	// 全局服务对象
 	global *Server

@@ -220,7 +220,7 @@ func (server *Server) loadFileInfoByDate(date string, filename string) (mapset.S
 	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	for iter.Next() {
 		var fileInfo common.FileInfo
-		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
+		if err = common.JSON.Unmarshal(iter.Value(), &fileInfo); err != nil {
 			continue
 		}
 		fileInfos.Add(&fileInfo)

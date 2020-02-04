@@ -247,11 +247,11 @@ func testApis(t *testing.T) {
 		result string
 	)
 
-	apis := []string{"/index","/status", "/stat", "/repair?force=1", "/repair_stat",
-	"/sync?force=1&date=" + testUtil.GetToDay(),"/delete?md5="+testSmallFileMd5,
-	"/repair_fileinfo","","/list_dir","/gen_google_code?secret=N7IET373HB2C5M6D",
-	"/gen_google_secret","/receive_md5s?md5s=xx","/remove_empty_dir","/backup","/search?kw=ab",
-	"/reload=get","/back","/report"}
+	apis := []string{"/index", "/status", "/stat", "/repair?force=1", "/repair_stat",
+		"/sync?force=1&date=" + testUtil.GetToDay(), "/delete?md5=" + testSmallFileMd5,
+		"/repair_fileinfo", "", "/list_dir", "/gen_google_code?secret=N7IET373HB2C5M6D",
+		"/gen_google_secret", "/receive_md5s?md5s=xx", "/remove_empty_dir", "/backup", "/search?kw=ab",
+		"/reload=get", "/back", "/report"}
 	for _, v := range apis {
 		req := httplib.Get(endPoint + v)
 		req.SetTimeout(time.Second*2, time.Second*3)
@@ -260,7 +260,7 @@ func testApis(t *testing.T) {
 			t.Error(err)
 			continue
 		}
-		fmt.Println("#########apis#########",v)
+		fmt.Println("#########apis#########", v)
 		fmt.Println(result)
 	}
 
@@ -384,9 +384,9 @@ func Test_main(t *testing.T) {
 			uploadLarge(t)
 			checkFileExist(t)
 			testApis(t)
-			if endPoint != endPoint2 && endPoint2!="" {
+			if endPoint != endPoint2 && endPoint2 != "" {
 				endPoint = endPoint2
-				fmt.Println("#######endPoint2######",endPoint2)
+				fmt.Println("#######endPoint2######", endPoint2)
 				initFile(1024*testUtil.RandInt(100, 512), 1024*1024*testUtil.RandInt(2, 20))
 				uploadContinueBig(t)
 				uploadContinueSmall(t)

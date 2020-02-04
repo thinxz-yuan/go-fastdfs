@@ -92,7 +92,7 @@ func (server *Server) BenchMark(w http.ResponseWriter, r *http.Request) {
 		s = server.util.MD5(s)
 		f.Name = s
 		f.Md5 = s
-		if data, err := json.Marshal(&f); err == nil {
+		if data, err := common.JSON.Marshal(&f); err == nil {
 			batch.Put([]byte(s), data)
 		}
 		if i%10000 == 0 {

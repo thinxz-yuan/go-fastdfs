@@ -15,6 +15,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/thinxz-yuan/go-fastdfs/common"
 	"github.com/thinxz-yuan/go-fastdfs/serv/cont"
+	"github.com/thinxz-yuan/go-fastdfs/serv/web"
 	"io"
 	"io/ioutil"
 	slog "log"
@@ -156,7 +157,7 @@ func (server *Server) GetFileInfoFromLevelDB(key string) (*common.FileInfo, erro
 	if data, err = server.ldb.Get([]byte(key), nil); err != nil {
 		return nil, err
 	}
-	if err = json.Unmarshal(data, &fileInfo); err != nil {
+	if err = common.JSON.Unmarshal(data, &fileInfo); err != nil {
 		return nil, err
 	}
 	return &fileInfo, nil
@@ -176,7 +177,7 @@ func (server *Server) SaveStat() {
 			switch v.(type) {
 			case int64, int32, int, float64, float32:
 				if v.(int64) >= 0 {
-					if data, err := json.Marshal(stat); err != nil {
+					if data, err := common.JSON.Marshal(stat); err != nil {
 						log.Error(err)
 					} else {
 						server.util.WriteBinFile(CONST_STAT_FILE_NAME, data)
@@ -415,7 +416,7 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(server.util.JsonEncodePretty(result)))
 			return
 		}
-		if err = json.Unmarshal([]byte(cfgJson), &cfg); err != nil {
+		if err = common.JSON.Unmarshal([]byte(cfgJson), &cfg); err != nil {
 			log.Error(err)
 			result.Message = err.Error()
 			w.Write([]byte(server.util.JsonEncodePretty(result)))
@@ -434,7 +435,7 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(server.util.JsonEncodePretty(result)))
 			return
 		}
-		if err = json.Unmarshal(data, &cfg); err != nil {
+		if err = common.JSON.Unmarshal(data, &cfg); err != nil {
 			result.Message = err.Error()
 			_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
 			return
@@ -463,7 +464,7 @@ func (server *Server) formatStatInfo() {
 		if data, err = server.util.ReadBinFile(CONST_STAT_FILE_NAME); err != nil {
 			log.Error(err)
 		} else {
-			if err = json.Unmarshal(data, &stat); err != nil {
+			if err = common.JSON.Unmarshal(data, &stat); err != nil {
 				log.Error(err)
 			} else {
 				for k, v := range stat {
@@ -508,7 +509,7 @@ func (server *Server) repairStatByDate(date string) common.StatDateFileInfo {
 	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter.Release()
 	for iter.Next() {
-		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
+		if err = common.JSON.Unmarshal(iter.Value(), &fileInfo); err != nil {
 			continue
 		}
 		fileCount = fileCount + 1
@@ -615,7 +616,7 @@ func (server *Server) initTus() {
 	}
 	store.UseIn(composer)
 	SetupPreHooks := func(composer *tusd.StoreComposer) {
-		composer.UseCore(HookDataStore{
+		composer.UseCore(web.HookDataStore{
 			DataStore: composer.Core,
 		})
 	}

@@ -1,4 +1,4 @@
-package serv
+package web
 
 import (
 	"errors"
@@ -34,7 +34,7 @@ func (store HookDataStore) NewUpload(info tusd.FileInfo) (id string, err error) 
 			content, err := req.String()
 			content = strings.TrimSpace(content)
 			if strings.HasPrefix(content, "{") && strings.HasSuffix(content, "}") {
-				if err = json.Unmarshal([]byte(content), &jsonResult); err != nil {
+				if err = common.JSON.Unmarshal([]byte(content), &jsonResult); err != nil {
 					log.Error(err)
 					return "", HttpError{error: errors.New(err.Error() + content), statusCode: 401}
 				}

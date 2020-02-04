@@ -73,7 +73,7 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 	iter := server.logDB.NewIterator(util.BytesPrefix([]byte(keyPrefix)), nil)
 	defer iter.Release()
 	for iter.Next() {
-		if err = json.Unmarshal(iter.Value(), &fileInfo); err != nil {
+		if err = common.JSON.Unmarshal(iter.Value(), &fileInfo); err != nil {
 			continue
 		}
 		name = fileInfo.Name
@@ -115,7 +115,7 @@ func (server *Server) SaveFileInfoToLevelDB(key string, fileInfo *common.FileInf
 	if fileInfo == nil || db == nil {
 		return nil, errors.New("fileInfo is null or db is null")
 	}
-	if data, err = json.Marshal(fileInfo); err != nil {
+	if data, err = common.JSON.Marshal(fileInfo); err != nil {
 		return fileInfo, err
 	}
 	if err = db.Put([]byte(key), data, nil); err != nil {
@@ -371,7 +371,7 @@ func (server *Server) postFileToPeer(fileInfo *common.FileInfo) {
 		postURL = fmt.Sprintf("%s%s", peer, server.getRequestURI("syncfile_info"))
 		b := httplib.Post(postURL)
 		b.SetTimeout(time.Second*30, time.Second*30)
-		if data, err = json.Marshal(fileInfo); err != nil {
+		if data, err = common.JSON.Marshal(fileInfo); err != nil {
 			log.Error(err)
 			return
 		}
@@ -605,7 +605,7 @@ func (server *Server) CheckAuth(w http.ResponseWriter, r *http.Request) bool {
 	result, err = req.String()
 	result = strings.TrimSpace(result)
 	if strings.HasPrefix(result, "{") && strings.HasSuffix(result, "}") {
-		if err = json.Unmarshal([]byte(result), &jsonResult); err != nil {
+		if err = common.JSON.Unmarshal([]byte(result), &jsonResult); err != nil {
 			log.Error(err)
 			return false
 		}
@@ -737,7 +737,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 					os.Remove(DOCKER_DIR + fileInfo.Path + "/" + fileInfo.Name)
 				}
 				if output == "json" {
-					if data, err = json.Marshal(fileResult); err != nil {
+					if data, err = common.JSON.Marshal(fileResult); err != nil {
 						log.Error(err)
 						w.Write([]byte(err.Error()))
 					}
@@ -774,7 +774,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		}
 		fileResult = server.BuildFileResult(&fileInfo, r)
 		if output == "json" {
-			if data, err = json.Marshal(fileResult); err != nil {
+			if data, err = common.JSON.Marshal(fileResult); err != nil {
 				log.Error(err)
 				w.Write([]byte(err.Error()))
 			}
@@ -795,7 +795,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 			fileResult = server.BuildFileResult(v, r)
 		}
 		if output == "json" {
-			if data, err = json.Marshal(fileResult); err != nil {
+			if data, err = common.JSON.Marshal(fileResult); err != nil {
 				log.Error(err)
 				w.Write([]byte(err.Error()))
 			}
