@@ -34,7 +34,6 @@ import (
 type Server struct {
 	ldb            *leveldb.DB
 	logDB          *leveldb.DB
-	util           *goutil.Common
 	statMap        *goutil.CommonMap
 	sumMap         *goutil.CommonMap
 	rtMap          *goutil.CommonMap
@@ -52,7 +51,6 @@ type Server struct {
 
 func NewServer() (server *Server, err error) {
 	server = &Server{
-		util:           &goutil.Common{},
 		statMap:        goutil.NewCommonMap(0),
 		lockMap:        goutil.NewCommonMap(0),
 		rtMap:          goutil.NewCommonMap(0),
@@ -83,9 +81,9 @@ func NewServer() (server *Server, err error) {
 	httplib.SetDefaultSetting(settings)
 	server.statMap.Put(cont.CONST_STAT_FILE_COUNT_KEY, int64(0))
 	server.statMap.Put(cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, int64(0))
-	server.statMap.Put(server.util.GetToDay()+"_"+cont.CONST_STAT_FILE_COUNT_KEY, int64(0))
-	server.statMap.Put(server.util.GetToDay()+"_"+cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, int64(0))
-	server.curDate = server.util.GetToDay()
+	server.statMap.Put(common.Util.GetToDay()+"_"+cont.CONST_STAT_FILE_COUNT_KEY, int64(0))
+	server.statMap.Put(common.Util.GetToDay()+"_"+cont.CONST_STAT_FILE_TOTAL_SIZE_KEY, int64(0))
+	server.curDate = common.Util.GetToDay()
 	opts := &opt.Options{
 		CompactionTableSize: 1024 * 1024 * 20,
 		WriteBuffer:         1024 * 1024 * 20,
@@ -138,13 +136,6 @@ func (server *Server) CheckFileExistByInfo(md5s string, fileInfo *common.FileInf
 		return false
 	}
 }
-func (server *Server) CrossOrigin(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, X-File-Type, Cache-Control, Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-	w.Header().Set("Access-Control-Expose-Headers", "Authorization")
-	//https://blog.csdn.net/yanzisu_congcong/article/details/80552155
-}
 func (server *Server) IsExistFromLevelDB(key string, db *leveldb.DB) (bool, error) {
 	return db.Has([]byte(key), nil)
 }
@@ -180,53 +171,13 @@ func (server *Server) SaveStat() {
 					if data, err := common.JSON.Marshal(stat); err != nil {
 						log.Error(err)
 					} else {
-						server.util.WriteBinFile(CONST_STAT_FILE_NAME, data)
+						common.Util.WriteBinFile(CONST_STAT_FILE_NAME, data)
 					}
 				}
 			}
 		}
 	}
 	SaveStatFunc()
-}
-func (server *Server) IsPeer(r *http.Request) bool {
-	var (
-		ip    string
-		peer  string
-		bflag bool
-	)
-	//return true
-	ip = server.util.GetClientIp(r)
-	realIp := os.Getenv("GO_FASTDFS_IP")
-	if realIp == "" {
-		realIp = server.util.GetPulicIP()
-	}
-	if ip == "127.0.0.1" || ip == realIp {
-		return true
-	}
-	if server.util.Contains(ip, common.Config().AdminIps) {
-		return true
-	}
-	ip = "http://" + ip
-	bflag = false
-	for _, peer = range common.Config().Peers {
-		if strings.HasPrefix(peer, ip) {
-			bflag = true
-			break
-		}
-	}
-	return bflag
-}
-func (server *Server) GetClusterNotPermitMessage(r *http.Request) string {
-	var (
-		message string
-	)
-	message = fmt.Sprintf(cont.CONST_MESSAGE_CLUSTER_IP, server.util.GetClientIp(r))
-	return message
-}
-
-//
-func (server *Server) GetUtil() *goutil.Common {
-	return server.util
 }
 
 //
@@ -252,7 +203,7 @@ func (server *Server) initComponent(isReload bool) {
 	//
 	var ip string
 	if ip := os.Getenv("GO_FASTDFS_IP"); ip == "" {
-		ip = server.util.GetPulicIP()
+		ip = common.Util.GetPulicIP()
 	}
 	if common.Config().Host == "" {
 		if len(strings.Split(common.Config().Addr, ":")) == 2 {
@@ -271,8 +222,8 @@ func (server *Server) initComponent(isReload bool) {
 	ex, _ := regexp.Compile("\\d+\\.\\d+\\.\\d+\\.\\d+")
 	var peers []string
 	for _, peer := range common.Config().Peers {
-		if server.util.Contains(ip, ex.FindAllString(peer, -1)) ||
-			server.util.Contains("127.0.0.1", ex.FindAllString(peer, -1)) {
+		if common.Util.Contains(ip, ex.FindAllString(peer, -1)) ||
+			common.Util.Contains("127.0.0.1", ex.FindAllString(peer, -1)) {
 			continue
 		}
 		if strings.HasPrefix(peer, "http") {
@@ -328,10 +279,10 @@ func (server *Server) startComponent() {
 	go func() {
 		for {
 			// 自动检测系统状态 (文件和结点状态)
-			server.checkFileAndSendToPeer(server.util.GetToDay(), cont.CONST_Md5_ERROR_FILE_NAME, false)
+			server.checkFileAndSendToPeer(common.Util.GetToDay(), cont.CONST_Md5_ERROR_FILE_NAME, false)
 			//fmt.Println("CheckFileAndSendToPeer")
 			time.Sleep(time.Second * time.Duration(common.Config().RefreshInterval))
-			//server.util.RemoveEmptyDir(STORE_DIR)
+			//common.Util.RemoveEmptyDir(STORE_DIR)
 		}
 	}()
 
@@ -395,8 +346,8 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 	)
 	result.Status = "fail"
 	err := r.ParseForm()
-	if !server.IsPeer(r) {
-		w.Write([]byte(server.GetClusterNotPermitMessage(r)))
+	if !common.IsPeer(r) {
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		return
 	}
 	cfgJson := r.FormValue("cfg")
@@ -406,44 +357,44 @@ func (server *Server) Reload(w http.ResponseWriter, r *http.Request) {
 	if action == "get" {
 		result.Data = common.Config()
 		result.Status = "ok"
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	//
 	if action == "set" {
 		if cfgJson == "" {
 			result.Message = "(error)parameter cfg(json) require"
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
+			w.Write([]byte(common.Util.JsonEncodePretty(result)))
 			return
 		}
 		if err = common.JSON.Unmarshal([]byte(cfgJson), &cfg); err != nil {
 			log.Error(err)
 			result.Message = err.Error()
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
+			w.Write([]byte(common.Util.JsonEncodePretty(result)))
 			return
 		}
 		result.Status = "ok"
-		cfgJson = server.util.JsonEncodePretty(cfg)
-		server.util.WriteFile(CONST_CONF_FILE_NAME, cfgJson)
-		w.Write([]byte(server.util.JsonEncodePretty(result)))
+		cfgJson = common.Util.JsonEncodePretty(cfg)
+		common.Util.WriteFile(CONST_CONF_FILE_NAME, cfgJson)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	//
 	if action == "reload" {
 		if data, err = ioutil.ReadFile(CONST_CONF_FILE_NAME); err != nil {
 			result.Message = err.Error()
-			w.Write([]byte(server.util.JsonEncodePretty(result)))
+			w.Write([]byte(common.Util.JsonEncodePretty(result)))
 			return
 		}
 		if err = common.JSON.Unmarshal(data, &cfg); err != nil {
 			result.Message = err.Error()
-			_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
+			_, err = w.Write([]byte(common.Util.JsonEncodePretty(result)))
 			return
 		}
 		common.ParseConfig(CONST_CONF_FILE_NAME)
 		server.initComponent(true)
 		result.Status = "ok"
-		_, err = w.Write([]byte(server.util.JsonEncodePretty(result)))
+		_, err = w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	//
@@ -460,8 +411,8 @@ func (server *Server) formatStatInfo() {
 		count int64
 		stat  map[string]interface{}
 	)
-	if server.util.FileExists(CONST_STAT_FILE_NAME) {
-		if data, err = server.util.ReadBinFile(CONST_STAT_FILE_NAME); err != nil {
+	if common.Util.FileExists(CONST_STAT_FILE_NAME) {
+		if data, err = common.Util.ReadBinFile(CONST_STAT_FILE_NAME); err != nil {
 			log.Error(err)
 		} else {
 			if err = common.JSON.Unmarshal(data, &stat); err != nil {
@@ -483,7 +434,7 @@ func (server *Server) formatStatInfo() {
 			}
 		}
 	} else {
-		server.repairStatByDate(server.util.GetToDay())
+		server.repairStatByDate(common.Util.GetToDay())
 	}
 }
 
@@ -548,7 +499,7 @@ func (server *Server) initTus() {
 			} else {
 				if fi.Size() > 1024*1024*500 {
 					//500M
-					server.util.CopyFile(LOG_DIR+"/tusd.log", LOG_DIR+"/tusd.log.2")
+					common.Util.CopyFile(LOG_DIR+"/tusd.log", LOG_DIR+"/tusd.log.2")
 					fileLog.Seek(0, 0)
 					fileLog.Truncate(0)
 					fileLog.Seek(0, 2)
@@ -578,7 +529,7 @@ func (server *Server) initTus() {
 			return nil, err
 		} else {
 			if common.Config().AuthUrl != "" {
-				fileResult := server.util.JsonEncodePretty(server.BuildFileResult(fi, nil))
+				fileResult := common.Util.JsonEncodePretty(server.BuildFileResult(fi, nil))
 				bufferReader := bytes.NewBuffer([]byte(fileResult))
 				return bufferReader, nil
 			}
@@ -587,19 +538,19 @@ func (server *Server) initTus() {
 				fn = fi.ReName
 			}
 			fp := DOCKER_DIR + fi.Path + "/" + fn
-			if server.util.FileExists(fp) {
+			if common.Util.FileExists(fp) {
 				log.Info(fmt.Sprintf("download:%s", fp))
 				return os.Open(fp)
 			}
 			ps := strings.Split(fp, ",")
-			if len(ps) > 2 && server.util.FileExists(ps[0]) {
+			if len(ps) > 2 && common.Util.FileExists(ps[0]) {
 				if length, err = strconv.Atoi(ps[2]); err != nil {
 					return nil, err
 				}
 				if offset, err = strconv.ParseInt(ps[1], 10, 64); err != nil {
 					return nil, err
 				}
-				if buffer, err = server.util.ReadFileByOffSet(ps[0], offset, length); err != nil {
+				if buffer, err = common.Util.ReadFileByOffSet(ps[0], offset, length); err != nil {
 					return nil, err
 				}
 				if buffer[0] == '1' {
@@ -649,7 +600,7 @@ func (server *Server) initTus() {
 				md5sum := ""
 				oldFullPath := BIG_DIR + "/" + info.ID + ".bin"
 				infoFullPath := BIG_DIR + "/" + info.ID + ".info"
-				if md5sum, err = server.util.GetFileSumByName(oldFullPath, common.Config().FileSumArithmetic); err != nil {
+				if md5sum, err = common.Util.GetFileSumByName(oldFullPath, common.Config().FileSumArithmetic); err != nil {
 					log.Error(err)
 					continue
 				}
@@ -674,7 +625,7 @@ func (server *Server) initTus() {
 					log.Error(err)
 				} else {
 					tpath := server.GetFilePathByInfo(fi, true)
-					if fi.Md5 != "" && server.util.FileExists(tpath) {
+					if fi.Md5 != "" && common.Util.FileExists(tpath) {
 						if _, err := server.SaveFileInfoToLevelDB(info.ID, fi, server.ldb); err != nil {
 							log.Error(err)
 						}
@@ -714,7 +665,7 @@ func (server *Server) initTus() {
 					if callback_url, ok := info.MetaData["callback_url"]; ok {
 						req := httplib.Post(callback_url)
 						req.SetTimeout(time.Second*10, time.Second*10)
-						req.Param("info", server.util.JsonEncodePretty(fileInfo))
+						req.Param("info", common.Util.JsonEncodePretty(fileInfo))
 						req.Param("id", info.ID)
 						if _, err := req.String(); err != nil {
 							log.Error(err)

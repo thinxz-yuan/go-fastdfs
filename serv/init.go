@@ -130,15 +130,15 @@ func init() {
 	global, _ = NewServer()
 
 	//
-	peerId := fmt.Sprintf("%d", global.util.RandInt(0, 9))
-	if !global.util.FileExists(CONST_CONF_FILE_NAME) {
+	peerId := fmt.Sprintf("%d", common.Util.RandInt(0, 9))
+	if !common.Util.FileExists(CONST_CONF_FILE_NAME) {
 		var ip string
 		if ip = os.Getenv("GO_FASTDFS_IP"); ip == "" {
-			ip = global.util.GetPulicIP()
+			ip = common.Util.GetPulicIP()
 		}
 		peer := "http://" + ip + ":8080"
 		cfg := fmt.Sprintf(cont.CfgJson, peerId, peer, peer)
-		global.util.WriteFile(CONST_CONF_FILE_NAME, cfg)
+		common.Util.WriteFile(CONST_CONF_FILE_NAME, cfg)
 	}
 
 	//

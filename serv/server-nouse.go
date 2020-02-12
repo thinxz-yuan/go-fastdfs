@@ -31,11 +31,11 @@ func (server *Server) GetMd5File(w http.ResponseWriter, r *http.Request) {
 		data  []byte
 		err   error
 	)
-	if !server.IsPeer(r) {
+	if !common.IsPeer(r) {
 		return
 	}
 	fpath = DATA_DIR + "/" + date + "/" + cont.CONST_FILE_Md5_FILE_NAME
-	if !server.util.FileExists(fpath) {
+	if !common.Util.FileExists(fpath) {
 		w.WriteHeader(404)
 		return
 	}
@@ -62,7 +62,7 @@ func (server *Server) GetMd5sMapByDate(date string, filename string) (*goutil.Co
 	} else {
 		fpath = DATA_DIR + "/" + date + "/" + filename
 	}
-	if !server.util.FileExists(fpath) {
+	if !common.Util.FileExists(fpath) {
 		return result, errors.New(fmt.Sprintf("fpath %s not found", fpath))
 	}
 	if data, err = ioutil.ReadFile(fpath); err != nil {
@@ -89,7 +89,7 @@ func (server *Server) BenchMark(w http.ResponseWriter, r *http.Request) {
 		f.Peers = []string{"http://192.168.0.1", "http://192.168.2.5"}
 		f.Path = "20190201/19/02"
 		s := strconv.Itoa(i)
-		s = server.util.MD5(s)
+		s = common.Util.MD5(s)
 		f.Name = s
 		f.Md5 = s
 		if data, err := common.JSON.Marshal(&f); err == nil {
@@ -105,7 +105,7 @@ func (server *Server) BenchMark(w http.ResponseWriter, r *http.Request) {
 		}
 		//fmt.Println(server.GetFileInfoFromLevelDB(s))
 	}
-	server.util.WriteFile("time.txt", time.Since(t).String())
+	common.Util.WriteFile("time.txt", time.Since(t).String())
 	fmt.Println(time.Since(t).String())
 }
 func (server *Server) RegisterExit() {

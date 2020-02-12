@@ -56,7 +56,7 @@ func (hs *HttpServer) Download(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if common.Config().EnableCrossOrigin {
-		hs.server.CrossOrigin(w, r)
+		common.CrossOrigin(w, r)
 	}
 	fullpath, smallPath = hs.getFilePathFromRequest(w, r)
 	if smallPath == "" {
@@ -99,15 +99,15 @@ func (hs *HttpServer) checkDownloadAuth(w http.ResponseWriter, r *http.Request) 
 		ok           bool
 	)
 	CheckToken := func(token string, md5sum string, timestamp string) bool {
-		if hs.util.MD5(md5sum+timestamp) != token {
+		if common.Util.MD5(md5sum+timestamp) != token {
 			return false
 		}
 		return true
 	}
-	if common.Config().EnableDownloadAuth && common.Config().AuthUrl != "" && !hs.server.IsPeer(r) && !hs.server.CheckAuth(w, r) {
+	if common.Config().EnableDownloadAuth && common.Config().AuthUrl != "" && !common.IsPeer(r) && !hs.server.CheckAuth(w, r) {
 		return false, errors.New("auth fail")
 	}
-	if common.Config().DownloadUseToken && !hs.server.IsPeer(r) {
+	if common.Config().DownloadUseToken && !common.IsPeer(r) {
 		token = r.FormValue("token")
 		timestamp = r.FormValue("timestamp")
 		if token == "" || timestamp == "" {
@@ -125,9 +125,9 @@ func (hs *HttpServer) checkDownloadAuth(w http.ResponseWriter, r *http.Request) 
 		}
 		fullpath, smallPath = hs.getFilePathFromRequest(w, r)
 		if smallPath != "" {
-			pathMd5 = hs.util.MD5(smallPath)
+			pathMd5 = common.Util.MD5(smallPath)
 		} else {
-			pathMd5 = hs.util.MD5(fullpath)
+			pathMd5 = common.Util.MD5(fullpath)
 		}
 		if fileInfo, err = hs.server.GetFileInfoFromLevelDB(pathMd5); err != nil {
 			// TODO
@@ -139,7 +139,7 @@ func (hs *HttpServer) checkDownloadAuth(w http.ResponseWriter, r *http.Request) 
 			return ok, nil
 		}
 	}
-	if common.Config().EnableGoogleAuth && !hs.server.IsPeer(r) {
+	if common.Config().EnableGoogleAuth && !common.IsPeer(r) {
 		fullpath = r.RequestURI[len(common.Config().Group)+2 : len(r.RequestURI)]
 		fullpath = strings.Split(fullpath, "?")[0] // just path
 		scene = strings.Split(fullpath, "/")[0]
@@ -223,7 +223,7 @@ func (hs *HttpServer) getSmallFileByURI(w http.ResponseWriter, r *http.Request) 
 	if info.Size() < offset+int64(length) {
 		return nil, true, errors.New("noFound")
 	} else {
-		data, err = hs.util.ReadFileByOffSet(fullpath, offset, length)
+		data, err = common.Util.ReadFileByOffSet(fullpath, offset, length)
 		if err != nil {
 			return nil, false, err
 		}
@@ -300,9 +300,9 @@ func (hs *HttpServer) downloadNotFound(w http.ResponseWriter, r *http.Request) {
 		isDownload = false
 	}
 	if smallPath != "" {
-		pathMd5 = hs.util.MD5(smallPath)
+		pathMd5 = common.Util.MD5(smallPath)
 	} else {
-		pathMd5 = hs.util.MD5(fullpath)
+		pathMd5 = common.Util.MD5(fullpath)
 	}
 	for _, peer = range common.Config().Peers {
 		if fileInfo, err = hs.server.checkPeerFileExist(peer, pathMd5, fullpath); err != nil {
@@ -502,14 +502,14 @@ func (hs *HttpServer) Index(w http.ResponseWriter, r *http.Request) {
 			  </body>
 			</html>`
 		uppyFileName := STATIC_DIR + "/uppy.html"
-		if hs.util.IsExist(uppyFileName) {
-			if data, err := hs.util.ReadBinFile(uppyFileName); err != nil {
+		if common.Util.IsExist(uppyFileName) {
+			if data, err := common.Util.ReadBinFile(uppyFileName); err != nil {
 				log.Error(err)
 			} else {
 				uppy = string(data)
 			}
 		} else {
-			hs.util.WriteFile(uppyFileName, uppy)
+			common.Util.WriteFile(uppyFileName, uppy)
 		}
 		fmt.Fprintf(w,
 			fmt.Sprintf(uppy, uploadUrl, common.Config().DefaultScene, uploadBigUrl))
@@ -547,7 +547,7 @@ func (hs *HttpServer) CheckFilesExist(w http.ResponseWriter, r *http.Request) {
 			if fileInfo.ReName != "" {
 				fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
 			}
-			if hs.util.IsExist(fpath) {
+			if common.Util.IsExist(fpath) {
 				if data, err = common.JSON.Marshal(fileInfo); err == nil {
 					fileInfos = append(fileInfos, fileInfo)
 					//w.Write(data)
@@ -594,7 +594,7 @@ func (hs *HttpServer) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 		if fileInfo.ReName != "" {
 			fpath = DOCKER_DIR + fileInfo.Path + "/" + fileInfo.ReName
 		}
-		if hs.util.IsExist(fpath) {
+		if common.Util.IsExist(fpath) {
 			if data, err = common.JSON.Marshal(fileInfo); err == nil {
 				w.Write(data)
 				return
@@ -610,9 +610,9 @@ func (hs *HttpServer) CheckFileExist(w http.ResponseWriter, r *http.Request) {
 		if fpath != "" {
 			fi, err = os.Stat(fpath)
 			if err == nil {
-				sum := hs.util.MD5(fpath)
+				sum := common.Util.MD5(fpath)
 				//if Config().EnableDistinctFile {
-				//	sum, err = hs.util.GetFileSumByName(fpath, Config().FileSumArithmetic)
+				//	sum, err = common.Util.GetFileSumByName(fpath, Config().FileSumArithmetic)
 				//	if err != nil {
 				//		log.Error(err)
 				//	}
@@ -652,7 +652,7 @@ func (hs *HttpServer) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	folder = STORE_DIR + "/_tmp/" + time.Now().Format("20060102")
 	os.MkdirAll(folder, 0777)
-	fn = folder + "/" + hs.util.GetUUID()
+	fn = folder + "/" + common.Util.GetUUID()
 	defer func() {
 		os.Remove(fn)
 	}()
@@ -695,8 +695,8 @@ func (hs *HttpServer) RemoveFile(w http.ResponseWriter, r *http.Request) {
 	fpath = r.FormValue("path")
 	inner = r.FormValue("inner")
 	result.Status = "fail"
-	if !hs.server.IsPeer(r) {
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+	if !common.IsPeer(r) {
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		return
 	}
 	if common.Config().AuthUrl != "" && !hs.server.CheckAuth(w, r) {
@@ -705,7 +705,7 @@ func (hs *HttpServer) RemoveFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if fpath != "" && md5sum == "" {
 		fpath = strings.Replace(fpath, "/"+common.Config().Group+"/", cont.STORE_DIR_NAME+"/", 1)
-		md5sum = hs.util.MD5(fpath)
+		md5sum = common.Util.MD5(fpath)
 	}
 	if inner != "1" {
 		for _, peer := range common.Config().Peers {
@@ -724,17 +724,17 @@ func (hs *HttpServer) RemoveFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(md5sum) < 32 {
 		result.Message = "md5 unvalid"
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	if fileInfo, err = hs.server.GetFileInfoFromLevelDB(md5sum); err != nil {
 		result.Message = err.Error()
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	if fileInfo.OffSet >= 0 {
 		result.Message = "small file delete not support"
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	name = fileInfo.Name
@@ -742,21 +742,21 @@ func (hs *HttpServer) RemoveFile(w http.ResponseWriter, r *http.Request) {
 		name = fileInfo.ReName
 	}
 	fpath = fileInfo.Path + "/" + name
-	if fileInfo.Path != "" && hs.util.FileExists(DOCKER_DIR+fpath) {
+	if fileInfo.Path != "" && common.Util.FileExists(DOCKER_DIR+fpath) {
 		hs.server.SaveFileMd5Log(fileInfo, cont.CONST_REMOME_Md5_FILE_NAME)
 		if err = os.Remove(DOCKER_DIR + fpath); err != nil {
 			result.Message = err.Error()
-			w.Write([]byte(hs.util.JsonEncodePretty(result)))
+			w.Write([]byte(common.Util.JsonEncodePretty(result)))
 			return
 		} else {
 			result.Message = "remove success"
 			result.Status = "ok"
-			w.Write([]byte(hs.util.JsonEncodePretty(result)))
+			w.Write([]byte(common.Util.JsonEncodePretty(result)))
 			return
 		}
 	}
 	result.Message = "fail remove"
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }
 
 //
@@ -771,24 +771,24 @@ func (hs *HttpServer) GetFileInfo(w http.ResponseWriter, r *http.Request) {
 	md5sum = r.FormValue("md5")
 	fpath = r.FormValue("path")
 	result.Status = "fail"
-	if !hs.server.IsPeer(r) {
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+	if !common.IsPeer(r) {
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		return
 	}
 	md5sum = r.FormValue("md5")
 	if fpath != "" {
 		fpath = strings.Replace(fpath, "/"+common.Config().Group+"/", cont.STORE_DIR_NAME+"/", 1)
-		md5sum = hs.util.MD5(fpath)
+		md5sum = common.Util.MD5(fpath)
 	}
 	if fileInfo, err = hs.server.GetFileInfoFromLevelDB(md5sum); err != nil {
 		log.Error(err)
 		result.Message = err.Error()
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	result.Status = "ok"
 	result.Data = fileInfo
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	return
 }
 
@@ -799,9 +799,9 @@ func (hs *HttpServer) Sync(w http.ResponseWriter, r *http.Request) {
 	)
 	r.ParseForm()
 	result.Status = "fail"
-	if !hs.server.IsPeer(r) {
+	if !common.IsPeer(r) {
 		result.Message = "client must be in cluster"
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	date := ""
@@ -827,7 +827,7 @@ func (hs *HttpServer) Sync(w http.ResponseWriter, r *http.Request) {
 	}
 	if date == "" {
 		result.Message = "require paramete date &force , ?date=20181230"
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	date = strings.Replace(date, ".", "", -1)
@@ -838,7 +838,7 @@ func (hs *HttpServer) Sync(w http.ResponseWriter, r *http.Request) {
 	}
 	result.Status = "ok"
 	result.Message = "job is running"
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }
 
 //
@@ -852,9 +852,9 @@ func (hs *HttpServer) Stat(w http.ResponseWriter, r *http.Request) {
 		barSize  []int64
 		dataMap  map[string]interface{}
 	)
-	if !hs.server.IsPeer(r) {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	if !common.IsPeer(r) {
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	r.ParseForm()
@@ -876,9 +876,9 @@ func (hs *HttpServer) Stat(w http.ResponseWriter, r *http.Request) {
 		result.Data = dataMap
 	}
 	if inner == "1" {
-		w.Write([]byte(hs.util.JsonEncodePretty(data)))
+		w.Write([]byte(common.Util.JsonEncodePretty(data)))
 	} else {
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	}
 }
 
@@ -898,7 +898,7 @@ func (hs *HttpServer) Status(w http.ResponseWriter, r *http.Request) {
 	)
 	memStat := new(runtime.MemStats)
 	runtime.ReadMemStats(memStat)
-	today = hs.util.GetToDay()
+	today = common.Util.GetToDay()
 	sts = make(map[string]interface{})
 	sts["Fs.QueueFromPeers"] = len(hs.server.queueFromPeers)
 	sts["Fs.QueueToPeers"] = len(hs.server.queueToPeers)
@@ -952,7 +952,7 @@ func (hs *HttpServer) Status(w http.ResponseWriter, r *http.Request) {
 	sts["Sys.MemInfo"] = memInfo
 	status.Status = "ok"
 	status.Data = sts
-	w.Write([]byte(hs.util.JsonEncodePretty(status)))
+	w.Write([]byte(common.Util.JsonEncodePretty(status)))
 }
 func (hs *HttpServer) getStat() []common.StatDateFileInfo {
 	var (
@@ -1011,20 +1011,20 @@ func (hs *HttpServer) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
 		date   string
 		inner  string
 	)
-	if !hs.server.IsPeer(r) {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	if !common.IsPeer(r) {
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	date = r.FormValue("date")
 	inner = r.FormValue("inner")
 	if ok, err := regexp.MatchString("\\d{8}", date); err != nil || !ok {
 		result.Message = "invalid date"
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	if date == "" || len(date) != 8 {
-		date = hs.util.GetToDay()
+		date = common.Util.GetToDay()
 	}
 	if inner != "1" {
 		for _, peer := range common.Config().Peers {
@@ -1038,7 +1038,7 @@ func (hs *HttpServer) RepairStatWeb(w http.ResponseWriter, r *http.Request) {
 	}
 	result.Data = hs.server.repairStatByDate(date)
 	result.Status = "ok"
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }
 
 //
@@ -1054,13 +1054,13 @@ func (hs *HttpServer) Repair(w http.ResponseWriter, r *http.Request) {
 	if force == "1" {
 		forceRepair = true
 	}
-	if hs.server.IsPeer(r) {
+	if common.IsPeer(r) {
 		go hs.server.autoRepair(forceRepair)
 		result.Message = "repair job start..."
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	} else {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	}
 
 }
@@ -1074,13 +1074,13 @@ func (hs *HttpServer) Report(w http.ResponseWriter, r *http.Request) {
 	)
 	result.Status = "ok"
 	r.ParseForm()
-	if hs.server.IsPeer(r) {
+	if common.IsPeer(r) {
 		reportFileName = STATIC_DIR + "/report.html"
-		if hs.util.IsExist(reportFileName) {
-			if data, err := hs.util.ReadBinFile(reportFileName); err != nil {
+		if common.Util.IsExist(reportFileName) {
+			if data, err := common.Util.ReadBinFile(reportFileName); err != nil {
 				log.Error(err)
 				result.Message = err.Error()
-				w.Write([]byte(hs.util.JsonEncodePretty(result)))
+				w.Write([]byte(common.Util.JsonEncodePretty(result)))
 				return
 			} else {
 				html = string(data)
@@ -1096,7 +1096,7 @@ func (hs *HttpServer) Report(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte(fmt.Sprintf("%s is not found", reportFileName)))
 		}
 	} else {
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 	}
 }
 
@@ -1114,9 +1114,9 @@ func (hs *HttpServer) BackUp(w http.ResponseWriter, r *http.Request) {
 	date = r.FormValue("date")
 	inner = r.FormValue("inner")
 	if date == "" {
-		date = hs.util.GetToDay()
+		date = common.Util.GetToDay()
 	}
-	if hs.server.IsPeer(r) {
+	if common.IsPeer(r) {
 		if inner != "1" {
 			for _, peer := range common.Config().Peers {
 				backUp := func(peer string, date string) {
@@ -1134,10 +1134,10 @@ func (hs *HttpServer) BackUp(w http.ResponseWriter, r *http.Request) {
 		}
 		go hs.server.BackUpMetaDataByDate(date)
 		result.Message = "back job start..."
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	} else {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	}
 }
 
@@ -1152,9 +1152,9 @@ func (hs *HttpServer) Search(w http.ResponseWriter, r *http.Request) {
 		md5s      []string
 	)
 	kw = r.FormValue("kw")
-	if !hs.server.IsPeer(r) {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	if !common.IsPeer(r) {
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	iter := hs.server.ldb.NewIterator(nil, nil)
@@ -1165,7 +1165,7 @@ func (hs *HttpServer) Search(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 			continue
 		}
-		if strings.Contains(fileInfo.Name, kw) && !hs.util.Contains(fileInfo.Md5, md5s) {
+		if strings.Contains(fileInfo.Name, kw) && !common.Util.Contains(fileInfo.Md5, md5s) {
 			count = count + 1
 			fileInfos = append(fileInfos, fileInfo)
 			md5s = append(md5s, fileInfo.Md5)
@@ -1182,7 +1182,7 @@ func (hs *HttpServer) Search(w http.ResponseWriter, r *http.Request) {
 	//fileInfos=hs.SearchDict(kw) // serch file from map for huge capacity
 	result.Status = "ok"
 	result.Data = fileInfos
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }
 
 //
@@ -1195,15 +1195,15 @@ func (hs *HttpServer) ListDir(w http.ResponseWriter, r *http.Request) {
 		filesResult []common.FileInfoResult
 		tmpDir      string
 	)
-	if !hs.server.IsPeer(r) {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	if !common.IsPeer(r) {
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	dir = r.FormValue("dir")
 	//if dir == "" {
 	//	result.Message = "dir can't null"
-	//	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	//	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	//	return
 	//}
 	dir = strings.Replace(dir, ".", "", -1)
@@ -1214,7 +1214,7 @@ func (hs *HttpServer) ListDir(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error(err)
 		result.Message = err.Error()
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	for _, f := range filesInfo {
@@ -1224,13 +1224,13 @@ func (hs *HttpServer) ListDir(w http.ResponseWriter, r *http.Request) {
 			IsDir:   f.IsDir(),
 			ModTime: f.ModTime().Unix(),
 			Path:    dir,
-			Md5:     hs.util.MD5(strings.Replace(cont.STORE_DIR_NAME+"/"+dir+"/"+f.Name(), "//", "/", -1)),
+			Md5:     common.Util.MD5(strings.Replace(cont.STORE_DIR_NAME+"/"+dir+"/"+f.Name(), "//", "/", -1)),
 		}
 		filesResult = append(filesResult, fi)
 	}
 	result.Status = "ok"
 	result.Data = filesResult
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	return
 }
 
@@ -1240,14 +1240,14 @@ func (hs *HttpServer) RemoveEmptyDir(w http.ResponseWriter, r *http.Request) {
 		result common.JsonResult
 	)
 	result.Status = "ok"
-	if hs.server.IsPeer(r) {
-		go hs.util.RemoveEmptyDir(DATA_DIR)
-		go hs.util.RemoveEmptyDir(STORE_DIR)
+	if common.IsPeer(r) {
+		go common.Util.RemoveEmptyDir(DATA_DIR)
+		go common.Util.RemoveEmptyDir(STORE_DIR)
 		result.Message = "clean job start ..,don't try again!!!"
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	} else {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	}
 }
 
@@ -1256,8 +1256,8 @@ func (hs *HttpServer) RepairFileInfo(w http.ResponseWriter, r *http.Request) {
 	var (
 		result common.JsonResult
 	)
-	if !hs.server.IsPeer(r) {
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+	if !common.IsPeer(r) {
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		return
 	}
 	if !common.Config().EnableMigrate {
@@ -1267,7 +1267,7 @@ func (hs *HttpServer) RepairFileInfo(w http.ResponseWriter, r *http.Request) {
 	result.Status = "ok"
 	result.Message = "repair job start,don't try again,very danger "
 	go hs.server.repairFileInfoFromFile()
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }
 
 //
@@ -1279,12 +1279,12 @@ func (hs *HttpServer) SyncFileInfo(w http.ResponseWriter, r *http.Request) {
 		filename    string
 	)
 	r.ParseForm()
-	if !hs.server.IsPeer(r) {
+	if !common.IsPeer(r) {
 		return
 	}
 	fileInfoStr = r.FormValue("fileInfo")
 	if err = common.JSON.Unmarshal([]byte(fileInfoStr), &fileInfo); err != nil {
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		log.Error(err)
 		return
 	}
@@ -1314,8 +1314,8 @@ func (hs *HttpServer) GetMd5sForWeb(w http.ResponseWriter, r *http.Request) {
 		lines  []string
 		md5s   []interface{}
 	)
-	if !hs.server.IsPeer(r) {
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+	if !common.IsPeer(r) {
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		return
 	}
 	date = r.FormValue("date")
@@ -1340,9 +1340,9 @@ func (hs *HttpServer) ReceiveMd5s(w http.ResponseWriter, r *http.Request) {
 		fileInfo *common.FileInfo
 		md5s     []string
 	)
-	if !hs.server.IsPeer(r) {
-		log.Warn(fmt.Sprintf("ReceiveMd5s %s", hs.util.GetClientIp(r)))
-		w.Write([]byte(hs.server.GetClusterNotPermitMessage(r)))
+	if !common.IsPeer(r) {
+		log.Warn(fmt.Sprintf("ReceiveMd5s %s", common.Util.GetClientIp(r)))
+		w.Write([]byte(common.GetClusterNotPermitMessage(r)))
 		return
 	}
 	r.ParseForm()
@@ -1369,9 +1369,9 @@ func (hs *HttpServer) GenGoogleSecret(w http.ResponseWriter, r *http.Request) {
 	)
 	result.Status = "ok"
 	result.Message = "ok"
-	if !hs.server.IsPeer(r) {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	if !common.IsPeer(r) {
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 	}
 	GetSeed := func(length int) string {
 		seeds := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -1383,7 +1383,7 @@ func (hs *HttpServer) GenGoogleSecret(w http.ResponseWriter, r *http.Request) {
 		return s
 	}
 	result.Data = GetSeed(16)
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }
 
 //
@@ -1399,15 +1399,15 @@ func (hs *HttpServer) GenGoogleCode(w http.ResponseWriter, r *http.Request) {
 	secret = r.FormValue("secret")
 	result.Status = "ok"
 	result.Message = "ok"
-	if !hs.server.IsPeer(r) {
-		result.Message = hs.server.GetClusterNotPermitMessage(r)
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	if !common.IsPeer(r) {
+		result.Message = common.GetClusterNotPermitMessage(r)
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
 	if result.Data, err = goauth.GetCode(secret); err != nil {
 		result.Message = err.Error()
-		w.Write([]byte(hs.util.JsonEncodePretty(result)))
+		w.Write([]byte(common.Util.JsonEncodePretty(result)))
 		return
 	}
-	w.Write([]byte(hs.util.JsonEncodePretty(result)))
+	w.Write([]byte(common.Util.JsonEncodePretty(result)))
 }

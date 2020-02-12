@@ -50,10 +50,10 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 	defer server.lockMap.UnLockKey(logFileName)
 	metaFileName = DATA_DIR + "/" + date + "/" + "meta.data"
 	os.MkdirAll(DATA_DIR+"/"+date, 0775)
-	if server.util.IsExist(logFileName) {
+	if common.Util.IsExist(logFileName) {
 		os.Remove(logFileName)
 	}
-	if server.util.IsExist(metaFileName) {
+	if common.Util.IsExist(metaFileName) {
 		os.Remove(metaFileName)
 	}
 	fileLog, err = os.OpenFile(logFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0664)
@@ -84,7 +84,7 @@ func (server *Server) BackUpMetaDataByDate(date string) {
 		if _, err = fileMeta.WriteString(msg); err != nil {
 			log.Error(err)
 		}
-		msg = fmt.Sprintf("%s\t%s\n", server.util.MD5(fileInfo.Path+"/"+name), string(iter.Value()))
+		msg = fmt.Sprintf("%s\t%s\n", common.Util.MD5(fileInfo.Path+"/"+name), string(iter.Value()))
 		if _, err = fileMeta.WriteString(msg); err != nil {
 			log.Error(err)
 		}
@@ -122,7 +122,7 @@ func (server *Server) SaveFileInfoToLevelDB(key string, fileInfo *common.FileInf
 		return fileInfo, err
 	}
 	if db == server.ldb { //search slow ,write fast, double write logDB
-		logDate := server.util.GetDayFromTimeStamp(fileInfo.TimeStamp)
+		logDate := common.Util.GetDayFromTimeStamp(fileInfo.TimeStamp)
 		logKey := fmt.Sprintf("%s_%s_%s", logDate, cont.CONST_FILE_Md5_FILE_NAME, fileInfo.Md5)
 		server.logDB.Put([]byte(logKey), data, nil)
 	}
@@ -158,7 +158,7 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *common.FileInfo) {
 		log.Info(fmt.Sprintf("DownloadFromPeer file Exist, path:%s", fileInfo.Path+"/"+fileInfo.Name))
 		return
 	}
-	if (!common.Config().EnableDistinctFile || fileInfo.OffSet == -2) && server.util.FileExists(server.GetFilePathByInfo(fileInfo, true)) {
+	if (!common.Config().EnableDistinctFile || fileInfo.OffSet == -2) && common.Util.FileExists(server.GetFilePathByInfo(fileInfo, true)) {
 		// ignore migrate file
 		if fi, err = os.Stat(server.GetFilePathByInfo(fileInfo, true)); err == nil {
 			if fi.ModTime().Unix() > fileInfo.TimeStamp {
@@ -175,7 +175,7 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *common.FileInfo) {
 	}
 	//fmt.Println("downloadFromPeer",fileInfo)
 	p := strings.Replace(fileInfo.Path, cont.STORE_DIR_NAME+"/", "", 1)
-	//filename=server.util.UrlEncode(filename)
+	//filename=common.Util.UrlEncode(filename)
 	downloadUrl = peer + "/" + common.Config().Group + "/" + p + "/" + filename
 	log.Info("DownloadFromPeer: ", downloadUrl)
 	fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
@@ -234,7 +234,7 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *common.FileInfo) {
 			return
 		}
 		fpath = strings.Split(fpath, ",")[0]
-		err = server.util.WriteFileByOffSet(fpath, fileInfo.OffSet, data)
+		err = common.Util.WriteFileByOffSet(fpath, fileInfo.OffSet, data)
 		if err != nil {
 			log.Warn(err)
 			return
@@ -255,13 +255,13 @@ func (server *Server) DownloadFromPeer(peer string, fileInfo *common.FileInfo) {
 	_ = sum
 	//if Config().EnableDistinctFile {
 	//	//DistinctFile
-	//	if sum, err = server.util.GetFileSumByName(fpathTmp, Config().FileSumArithmetic); err != nil {
+	//	if sum, err = common.Util.GetFileSumByName(fpathTmp, Config().FileSumArithmetic); err != nil {
 	//		log.Error(err)
 	//		return
 	//	}
 	//} else {
 	//	//DistinctFile By path
-	//	sum = server.util.MD5(server.GetFilePathByInfo(fileInfo, false))
+	//	sum = common.Util.MD5(server.GetFilePathByInfo(fileInfo, false))
 	//}
 	if fi.Size() != fileInfo.Size { //  maybe has bug remove || sum != fileInfo.Md5
 		log.Error("file sum check error")
@@ -334,7 +334,7 @@ func (server *Server) postFileToPeer(fileInfo *common.FileInfo) {
 		if fileInfo.Peers == nil {
 			fileInfo.Peers = []string{}
 		}
-		if server.util.Contains(peer, fileInfo.Peers) {
+		if common.Util.Contains(peer, fileInfo.Peers) {
 			continue
 		}
 		filename = fileInfo.Name
@@ -345,7 +345,7 @@ func (server *Server) postFileToPeer(fileInfo *common.FileInfo) {
 			}
 		}
 		fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
-		if !server.util.FileExists(fpath) {
+		if !common.Util.FileExists(fpath) {
 			log.Warn(fmt.Sprintf("file '%s' not found", fpath))
 			continue
 		} else {
@@ -389,7 +389,7 @@ func (server *Server) postFileToPeer(fileInfo *common.FileInfo) {
 		}
 		if strings.HasPrefix(result, "http://") {
 			log.Info(result)
-			if !server.util.Contains(peer, fileInfo.Peers) {
+			if !common.Util.Contains(peer, fileInfo.Peers) {
 				fileInfo.Peers = append(fileInfo.Peers, peer)
 				if _, err = server.SaveFileInfoToLevelDB(fileInfo.Md5, fileInfo, server.ldb); err != nil {
 					log.Error(err)
@@ -423,7 +423,7 @@ func (server *Server) saveFileMd5Log(fileInfo *common.FileInfo, filename string)
 		log.Warn("saveFileMd5Log", fileInfo, filename)
 		return
 	}
-	logDate = server.util.GetDayFromTimeStamp(fileInfo.TimeStamp)
+	logDate = common.Util.GetDayFromTimeStamp(fileInfo.TimeStamp)
 	outname = fileInfo.Name
 	if fileInfo.ReName != "" {
 		outname = fileInfo.ReName
@@ -443,7 +443,7 @@ func (server *Server) saveFileMd5Log(fileInfo *common.FileInfo, filename string)
 		if _, err := server.SaveFileInfoToLevelDB(fileInfo.Md5, fileInfo, server.ldb); err != nil {
 			log.Error("saveToLevelDB", err, fileInfo)
 		}
-		if _, err = server.SaveFileInfoToLevelDB(server.util.MD5(fullpath), fileInfo, server.ldb); err != nil {
+		if _, err = server.SaveFileInfoToLevelDB(common.Util.MD5(fullpath), fileInfo, server.ldb); err != nil {
 			log.Error("saveToLevelDB", err, fileInfo)
 		}
 		return
@@ -456,7 +456,7 @@ func (server *Server) saveFileMd5Log(fileInfo *common.FileInfo, filename string)
 			server.SaveStat()
 		}
 		server.RemoveKeyFromLevelDB(logKey, server.logDB)
-		md5Path = server.util.MD5(fullpath)
+		md5Path = common.Util.MD5(fullpath)
 		if err := server.RemoveKeyFromLevelDB(fileInfo.Md5, server.ldb); err != nil {
 			log.Error("RemoveKeyFromLevelDB", err, fileInfo)
 		}
@@ -653,7 +653,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 	)
 	output = r.FormValue("output")
 	if common.Config().EnableCrossOrigin {
-		server.CrossOrigin(w, r)
+		common.CrossOrigin(w, r)
 		if r.Method == http.MethodOptions {
 			return
 		}
@@ -710,7 +710,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		if output == "" {
 			output = "text"
 		}
-		if !server.util.Contains(output, []string{"json", "text"}) {
+		if !common.Util.Contains(output, []string{"json", "text"}) {
 			w.Write([]byte("output just support json or text"))
 			return
 		}
@@ -758,7 +758,7 @@ func (server *Server) upload(w http.ResponseWriter, r *http.Request) {
 		}
 		if !common.Config().EnableDistinctFile {
 			// bugfix filecount stat
-			fileInfo.Md5 = server.util.MD5(server.GetFilePathByInfo(&fileInfo, false))
+			fileInfo.Md5 = common.Util.MD5(server.GetFilePathByInfo(&fileInfo, false))
 		}
 		if common.Config().EnableMergeSmallFile && fileInfo.Size < cont.CONST_SMALL_FILE_SIZE {
 			if err = server.saveSmallFile(&fileInfo); err != nil {
@@ -815,12 +815,12 @@ func (server *Server) saveUploadFile(file multipart.File, header *multipart.File
 	defer file.Close()
 	_, fileInfo.Name = filepath.Split(header.Filename)
 	// bugfix for ie upload file contain fullpath
-	if len(common.Config().Extensions) > 0 && !server.util.Contains(path.Ext(fileInfo.Name), common.Config().Extensions) {
+	if len(common.Config().Extensions) > 0 && !common.Util.Contains(path.Ext(fileInfo.Name), common.Config().Extensions) {
 		return fileInfo, errors.New("(error)file extension mismatch")
 	}
 
 	if common.Config().RenameFile {
-		fileInfo.ReName = server.util.MD5(server.util.GetUUID()) + path.Ext(fileInfo.Name)
+		fileInfo.ReName = common.Util.MD5(common.Util.GetUUID()) + path.Ext(fileInfo.Name)
 	}
 	folder = time.Now().Format("20060102/15/04")
 	if common.Config().PeerId != "" {
@@ -838,18 +838,18 @@ func (server *Server) saveUploadFile(file multipart.File, header *multipart.File
 			folder = STORE_DIR + "/" + fileInfo.Path
 		}
 	}
-	if !server.util.FileExists(folder) {
+	if !common.Util.FileExists(folder) {
 		os.MkdirAll(folder, 0775)
 	}
 	outPath := fmt.Sprintf(folder+"/%s", fileInfo.Name)
 	if fileInfo.ReName != "" {
 		outPath = fmt.Sprintf(folder+"/%s", fileInfo.ReName)
 	}
-	if server.util.FileExists(outPath) && common.Config().EnableDistinctFile {
+	if common.Util.FileExists(outPath) && common.Config().EnableDistinctFile {
 		for i := 0; i < 10000; i++ {
 			outPath = fmt.Sprintf(folder+"/%d_%s", i, filepath.Base(header.Filename))
 			fileInfo.Name = fmt.Sprintf("%d_%s", i, header.Filename)
-			if !server.util.FileExists(outPath) {
+			if !common.Util.FileExists(outPath) {
 				break
 			}
 		}
@@ -875,11 +875,11 @@ func (server *Server) saveUploadFile(file multipart.File, header *multipart.File
 	if fi.Size() != header.Size {
 		return fileInfo, errors.New("(error)file uncomplete")
 	}
-	v := "" // server.util.GetFileSum(outFile, Config().FileSumArithmetic)
+	v := "" // common.Util.GetFileSum(outFile, Config().FileSumArithmetic)
 	if common.Config().EnableDistinctFile {
-		v = server.util.GetFileSum(outFile, common.Config().FileSumArithmetic)
+		v = common.Util.GetFileSum(outFile, common.Config().FileSumArithmetic)
 	} else {
-		v = server.util.MD5(server.GetFilePathByInfo(fileInfo, false))
+		v = common.Util.MD5(server.GetFilePathByInfo(fileInfo, false))
 	}
 	fileInfo.Md5 = v
 	//fileInfo.Path = folder //strings.Replace( folder,DOCKER_DIR,"",1)
@@ -898,7 +898,7 @@ func (server *Server) checkScene(scene string) (bool, error) {
 	for _, s := range common.Config().Scenes {
 		scenes = append(scenes, strings.Split(s, ":")[0])
 	}
-	if !server.util.Contains(scene, scenes) {
+	if !common.Util.Contains(scene, scenes) {
 		return false, errors.New("not valid scene")
 	}
 	return true, nil
@@ -922,14 +922,14 @@ func (server *Server) saveSmallFile(fileInfo *common.FileInfo) error {
 	}
 	fpath = DOCKER_DIR + fileInfo.Path + "/" + filename
 	largeDir = LARGE_DIR + "/" + common.Config().PeerId
-	if !server.util.FileExists(largeDir) {
+	if !common.Util.FileExists(largeDir) {
 		os.MkdirAll(largeDir, 0775)
 	}
-	reName = fmt.Sprintf("%d", server.util.RandInt(100, 300))
+	reName = fmt.Sprintf("%d", common.Util.RandInt(100, 300))
 	destPath = largeDir + "/" + reName
 	server.lockMap.LockKey(destPath)
 	defer server.lockMap.UnLockKey(destPath)
-	if server.util.FileExists(fpath) {
+	if common.Util.FileExists(fpath) {
 		srcFile, err = os.OpenFile(fpath, os.O_CREATE|os.O_RDONLY, 06666)
 		if err != nil {
 			return err

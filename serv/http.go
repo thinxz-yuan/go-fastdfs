@@ -3,7 +3,6 @@ package serv
 import (
 	"fmt"
 	_ "github.com/eventials/go-tus"
-	"github.com/sjqzhang/goutil"
 	log "github.com/sjqzhang/seelog"
 	"github.com/thinxz-yuan/go-fastdfs/common"
 	"net/http"
@@ -14,13 +13,11 @@ import (
 
 type HttpServer struct {
 	server *Server
-	util   *goutil.Common
 }
 
 func NewHttpServer(server *Server, groupRoute string) *HttpServer {
 	hs := &HttpServer{
 		server,
-		&goutil.Common{},
 	}
 	// 初始化
 	hs.initHttpServer(groupRoute)
@@ -28,7 +25,7 @@ func NewHttpServer(server *Server, groupRoute string) *HttpServer {
 }
 
 type HttpHandler struct {
-	server *Server
+	hs *HttpServer
 }
 
 func (hh *HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
@@ -38,12 +35,12 @@ func (hh *HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			time.Now().Format("2006/01/02 - 15:04:05"),
 			//res.Header(),
 			time.Since(t).String(),
-			hh.server.GetUtil().GetClientIp(req),
+			common.Util.GetClientIp(req),
 			req.Method,
 			status_code,
 			req.RequestURI,
 		)
-		hh.server.GetLogger().Info(logStr)
+		hh.hs.server.GetLogger().Info(logStr)
 	}(time.Now())
 	defer func() {
 		if err := recover(); err != nil {
@@ -56,7 +53,7 @@ func (hh *HttpHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		}
 	}()
 	if common.Config().EnableCrossOrigin {
-		hh.server.CrossOrigin(res, req)
+		common.CrossOrigin(res, req)
 	}
 	http.DefaultServeMux.ServeHTTP(res, req)
 }
@@ -106,7 +103,7 @@ func (hs *HttpServer) initHttpServer(groupRoute string) {
 	fmt.Println("Listen on " + common.Config().Addr)
 	srv := &http.Server{
 		Addr:              common.Config().Addr,
-		Handler:           &HttpHandler{hs.server},
+		Handler:           &HttpHandler{hs},
 		ReadTimeout:       time.Duration(common.Config().ReadTimeout) * time.Second,
 		ReadHeaderTimeout: time.Duration(common.Config().ReadHeaderTimeout) * time.Second,
 		WriteTimeout:      time.Duration(common.Config().WriteTimeout) * time.Second,

@@ -53,7 +53,7 @@ func (server *Server) checkFileAndSendToPeer(date string, filename string, isFor
 			if len(fileInfo.Peers) > len(common.Config().Peers) {
 				continue
 			}
-			if !server.util.Contains(server.host, fileInfo.Peers) {
+			if !common.Util.Contains(server.host, fileInfo.Peers) {
 				fileInfo.Peers = append(fileInfo.Peers, server.host) // peer is null
 			}
 			if filename == cont.CONST_Md5_QUEUE_FILE_NAME {
@@ -72,14 +72,14 @@ func (server *Server) cleanAndBackUp() {
 			filenames []string
 			yesterday string
 		)
-		if server.curDate != server.util.GetToDay() {
+		if server.curDate != common.Util.GetToDay() {
 			filenames = []string{cont.CONST_Md5_QUEUE_FILE_NAME, cont.CONST_Md5_ERROR_FILE_NAME, cont.CONST_REMOME_Md5_FILE_NAME}
-			yesterday = server.util.GetDayFromTimeStamp(time.Now().AddDate(0, 0, -1).Unix())
+			yesterday = common.Util.GetDayFromTimeStamp(time.Now().AddDate(0, 0, -1).Unix())
 			for _, filename := range filenames {
 				server.cleanLogLevelDBByDate(yesterday, filename)
 			}
 			server.BackUpMetaDataByDate(yesterday)
-			server.curDate = server.util.GetToDay()
+			server.curDate = common.Util.GetToDay()
 		}
 	}
 	go func() {
@@ -191,7 +191,7 @@ func (server *Server) sendToMail(to, subject, body, mailtype string) error {
 }
 
 func (server *Server) loadQueueSendToPeer() {
-	if queue, err := server.loadFileInfoByDate(server.util.GetToDay(), cont.CONST_Md5_QUEUE_FILE_NAME); err != nil {
+	if queue, err := server.loadFileInfoByDate(common.Util.GetToDay(), cont.CONST_Md5_QUEUE_FILE_NAME); err != nil {
 		log.Error(err)
 	} else {
 		for fileInfo := range queue.Iter() {
@@ -355,7 +355,7 @@ func (server *Server) watchFilesChange() {
 					fpath = strings.Replace(event.Path, curDir, cont.STORE_DIR_NAME, 1)
 				}
 				fpath = strings.Replace(fpath, string(os.PathSeparator), "/", -1)
-				sum := server.util.MD5(fpath)
+				sum := common.Util.MD5(fpath)
 				fileInfo = common.FileInfo{
 					Size:      event.Size(),
 					Name:      event.Name(),
@@ -495,12 +495,12 @@ func (server *Server) repairFileInfoFromFile() {
 					log.Info(fmt.Sprintf("ignore small file file %s", file_path+"/"+fi.Name()))
 					continue
 				}
-				pathMd5 = server.util.MD5(file_path + "/" + fi.Name())
+				pathMd5 = common.Util.MD5(file_path + "/" + fi.Name())
 				//if finfo, _ := server.GetFileInfoFromLevelDB(pathMd5); finfo != nil && finfo.Md5 != "" {
 				//	log.Info(fmt.Sprintf("exist ignore file %s", file_path+"/"+fi.Name()))
 				//	continue
 				//}
-				//sum, err = server.util.GetFileSumByName(file_path+"/"+fi.Name(), Config().FileSumArithmetic)
+				//sum, err = common.Util.GetFileSumByName(file_path+"/"+fi.Name(), Config().FileSumArithmetic)
 				sum = pathMd5
 				if err != nil {
 					log.Error(err)
@@ -611,9 +611,9 @@ func (server *Server) autoRepair(forceRepair bool) {
 								log.Error(err)
 								continue
 							}
-							remoteSet = server.util.StrToMapSet(md5s, ",")
+							remoteSet = common.Util.StrToMapSet(md5s, ",")
 							allSet = localSet.Union(remoteSet)
-							md5s = server.util.MapSetToStr(allSet.Difference(localSet), ",")
+							md5s = common.Util.MapSetToStr(allSet.Difference(localSet), ",")
 							req = httplib.Post(fmt.Sprintf("%s%s", peer, server.getRequestURI("receive_md5s")))
 							req.SetTimeout(time.Second*15, time.Second*60)
 							req.Param("md5s", md5s)
